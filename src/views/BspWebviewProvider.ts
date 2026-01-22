@@ -11,7 +11,7 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
     private filteredApplications: BspApplication[] = [];
     private searchTerm: string = '';
     private isLoading: boolean = false;
-    private hasLoaded: boolean = false; // Track if we've ever loaded
+    private hasLoaded: boolean = false;
     private errorMessage: string | undefined;
     private bspService: BspService | undefined;
     private currentProfile: string | undefined;
@@ -34,9 +34,8 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri]
         };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        webviewView.webview.html = this._getHtmlForWebview();
 
-        // Handle messages from webview
         webviewView.webview.onDidReceiveMessage(async (message) => {
             switch (message.command) {
                 case 'search':
@@ -50,16 +49,15 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 case 'refresh':
-                    await this.loadApplications();
-                    break;
-                case 'load':
-                    await this.loadApplications();
+                    // Only refresh if we have a profile
+                    if (this.currentProfile) {
+                        await this.loadApplications(this.currentProfile);
+                    } else {
+                        vscode.window.showWarningMessage('Please select a profile first from SAP Profiles');
+                    }
                     break;
             }
         });
-
-        // DON'T auto-load - wait for user to click a profile or refresh
-        // Initial view just shows "Click a profile to load BSP applications"
     }
 
     public async loadApplications(profileName?: string): Promise<void> {
@@ -71,7 +69,7 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
             const targetProfile = profileName || this.configService.getDefaultProfile();
             
             if (!targetProfile) {
-                this.errorMessage = 'No SAP profile configured. Add one in SAP Profiles.';
+                this.errorMessage = 'Select a profile from SAP Profiles above';
                 this.isLoading = false;
                 this._updateView();
                 return;
@@ -89,7 +87,7 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
             
             const isConnected = await connection.testConnection();
             if (!isConnected) {
-                this.errorMessage = 'Failed to connect to SAP server.';
+                this.errorMessage = 'Connection failed. Check profile settings.';
                 this.isLoading = false;
                 this._updateView();
                 return;
@@ -142,249 +140,139 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
 
     private _updateView() {
         if (this._view) {
-            this._view.webview.html = this._getHtmlForWebview(this._view.webview);
+            this._view.webview.html = this._getHtmlForWebview();
         }
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview): string {
-        const appListHtml = this._generateAppListHtml();
-
+    private _getHtmlForWebview(): string {
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BSP Applications</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: var(--vscode-font-family);
-            font-size: var(--vscode-font-size);
+            font-size: 13px;
             color: var(--vscode-foreground);
-            background-color: var(--vscode-sideBar-background);
-            padding: 8px;
+            background: var(--vscode-sideBar-background);
         }
-        .search-container {
+        .header {
             position: sticky;
             top: 0;
-            background-color: var(--vscode-sideBar-background);
-            padding-bottom: 8px;
-            z-index: 10;
+            background: var(--vscode-sideBar-background);
+            padding: 6px;
+            border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
         }
-        .search-input {
+        .search {
             width: 100%;
-            padding: 6px 10px;
+            padding: 4px 8px;
             border: 1px solid var(--vscode-input-border);
-            background-color: var(--vscode-input-background);
+            background: var(--vscode-input-background);
             color: var(--vscode-input-foreground);
-            border-radius: 4px;
             font-size: 12px;
+            border-radius: 2px;
         }
-        .search-input:focus {
-            outline: none;
-            border-color: var(--vscode-focusBorder);
-        }
-        .search-input::placeholder {
-            color: var(--vscode-input-placeholderForeground);
-        }
-        .stats {
+        .search:focus { outline: 1px solid var(--vscode-focusBorder); }
+        .info {
             font-size: 11px;
             color: var(--vscode-descriptionForeground);
-            margin-top: 4px;
+            padding: 4px 0;
             display: flex;
             justify-content: space-between;
-            align-items: center;
         }
-        .refresh-btn {
-            background: none;
-            border: none;
-            color: var(--vscode-textLink-foreground);
-            cursor: pointer;
+        .refresh { 
+            background: none; 
+            border: none; 
+            color: var(--vscode-textLink-foreground); 
+            cursor: pointer; 
             font-size: 11px;
         }
-        .refresh-btn:hover {
-            text-decoration: underline;
-        }
-        .app-list {
-            margin-top: 8px;
-        }
-        .app-item {
-            padding: 8px 10px;
-            margin-bottom: 4px;
-            background-color: var(--vscode-list-hoverBackground);
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.15s;
-        }
-        .app-item:hover {
-            background-color: var(--vscode-list-activeSelectionBackground);
-        }
-        .app-name {
-            font-weight: 600;
-            font-size: 12px;
+        .list { padding: 2px 0; }
+        .item {
             display: flex;
             align-items: center;
-            gap: 6px;
-        }
-        .app-name .icon {
-            opacity: 0.7;
-        }
-        .app-desc {
-            font-size: 11px;
-            color: var(--vscode-descriptionForeground);
-            margin-top: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .app-package {
-            font-size: 10px;
-            color: var(--vscode-badge-foreground);
-            background-color: var(--vscode-badge-background);
-            padding: 1px 6px;
-            border-radius: 10px;
-            margin-top: 4px;
-            display: inline-block;
-        }
-        .download-btn {
-            float: right;
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
             padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 10px;
             cursor: pointer;
         }
-        .download-btn:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        .loading, .error, .empty {
-            text-align: center;
-            padding: 20px;
+        .item:hover { background: var(--vscode-list-hoverBackground); }
+        .icon { margin-right: 6px; font-size: 14px; }
+        .name { flex: 1; font-size: 13px; }
+        .pkg {
+            font-size: 10px;
             color: var(--vscode-descriptionForeground);
+            margin-left: 8px;
         }
-        .error {
-            color: var(--vscode-errorForeground);
+        .msg { 
+            padding: 20px; 
+            text-align: center; 
+            color: var(--vscode-descriptionForeground);
+            font-size: 12px;
         }
-        .highlight {
-            background-color: var(--vscode-editor-findMatchHighlightBackground);
-            font-weight: bold;
-        }
+        .error { color: var(--vscode-errorForeground); }
     </style>
 </head>
 <body>
-    <div class="search-container">
-        <input 
-            type="text" 
-            class="search-input" 
-            id="searchInput"
-            placeholder="🔍 Search by name, description or package..."
-            value="${this.escapeHtml(this.searchTerm)}"
-        />
-        <div class="stats">
-            <span>${this.isLoading ? 'Loading...' : `${this.filteredApplications.length} of ${this.applications.length} apps`}</span>
-            <button class="refresh-btn" onclick="refresh()">↻ Refresh</button>
+    <div class="header">
+        <input type="text" class="search" id="search" placeholder="Filter..." value="${this.escapeHtml(this.searchTerm)}" ${!this.hasLoaded ? 'disabled' : ''}>
+        <div class="info">
+            <span>${this._getInfoText()}</span>
+            <button class="refresh" onclick="refresh()"${!this.currentProfile ? ' disabled' : ''}>↻ Refresh</button>
         </div>
     </div>
-    
-    <div class="app-list">
-        ${appListHtml}
+    <div class="list">
+        ${this._generateList()}
     </div>
-
     <script>
         const vscode = acquireVsCodeApi();
-        const searchInput = document.getElementById('searchInput');
-        
-        let debounceTimer;
-        searchInput.addEventListener('input', (e) => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                vscode.postMessage({ command: 'search', value: e.target.value });
-            }, 200);
+        const search = document.getElementById('search');
+        let timer;
+        search.addEventListener('input', e => {
+            clearTimeout(timer);
+            timer = setTimeout(() => vscode.postMessage({command:'search',value:e.target.value}), 150);
         });
-
-        searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                searchInput.value = '';
-                vscode.postMessage({ command: 'search', value: '' });
-            }
-        });
-
-        function download(appName) {
-            event.stopPropagation();
-            vscode.postMessage({ command: 'download', appName: appName });
-        }
-
-        function refresh() {
-            vscode.postMessage({ command: 'refresh' });
-        }
-
-        // Focus search on load
-        searchInput.focus();
+        function download(name) { vscode.postMessage({command:'download',appName:name}); }
+        function refresh() { vscode.postMessage({command:'refresh'}); }
     </script>
 </body>
 </html>`;
     }
 
-    private _generateAppListHtml(): string {
-        if (this.isLoading) {
-            return '<div class="loading">⏳ Loading BSP applications...</div>';
-        }
-
-        if (this.errorMessage) {
-            return `<div class="error">❌ ${this.escapeHtml(this.errorMessage)}</div>`;
-        }
-
-        // If never loaded, show instruction
-        if (!this.hasLoaded) {
-            return '<div class="empty">👆 Click a profile in SAP Profiles to load BSP applications, or click ↻ Refresh</div>';
-        }
-
-        if (this.filteredApplications.length === 0) {
-            if (this.searchTerm) {
-                return `<div class="empty">No applications match "${this.escapeHtml(this.searchTerm)}"</div>`;
-            }
-            return '<div class="empty">No BSP applications found</div>';
-        }
-
-        return this.filteredApplications.map(app => `
-            <div class="app-item" onclick="download('${this.escapeHtml(app.name)}')">
-                <div class="app-name">
-                    <span class="icon">📦</span>
-                    ${this.highlightMatch(app.name)}
-                    <button class="download-btn" onclick="download('${this.escapeHtml(app.name)}')">⬇ Download</button>
-                </div>
-                <div class="app-desc">${this.highlightMatch(app.description) || 'No description'}</div>
-                <span class="app-package">${this.highlightMatch(app.package)}</span>
-            </div>
-        `).join('');
+    private _getInfoText(): string {
+        if (this.isLoading) return 'Loading...';
+        if (!this.hasLoaded) return 'Select a profile above';
+        return `${this.filteredApplications.length} / ${this.applications.length}`;
     }
 
-    private highlightMatch(text: string | undefined | null): string {
-        const safeText = String(text || '');
-        if (!this.searchTerm || !safeText) {
-            return this.escapeHtml(safeText);
+    private _generateList(): string {
+        if (this.isLoading) {
+            return '<div class="msg">⏳ Loading...</div>';
         }
-        
-        const escapedText = this.escapeHtml(safeText);
-        const escapedTerm = this.escapeHtml(this.searchTerm);
-        const regex = new RegExp(`(${escapedTerm})`, 'gi');
-        return escapedText.replace(regex, '<span class="highlight">$1</span>');
+        if (this.errorMessage) {
+            return `<div class="msg error">${this.escapeHtml(this.errorMessage)}</div>`;
+        }
+        if (!this.hasLoaded) {
+            return '<div class="msg">👆 Select a profile from SAP Profiles</div>';
+        }
+        if (this.filteredApplications.length === 0) {
+            return '<div class="msg">No results</div>';
+        }
+
+        return this.filteredApplications.map(app => {
+            const name = String(app.name || '');
+            const pkg = String(app.package || '');
+            return `<div class="item" onclick="download('${this.escapeHtml(name)}')">
+                <span class="icon">📦</span>
+                <span class="name">${this.escapeHtml(name)}</span>
+                <span class="pkg">${this.escapeHtml(pkg)}</span>
+            </div>`;
+        }).join('');
     }
 
     private escapeHtml(text: string | undefined | null): string {
-        if (text === null || text === undefined) {return '';}
+        if (text === null || text === undefined) return '';
         const str = String(text);
-        return str
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 }

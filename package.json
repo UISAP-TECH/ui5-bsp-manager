@@ -88,13 +88,13 @@
     "views": {
       "bspManager": [
         {
+          "id": "bspProfiles",
+          "name": "SAP Profiles"
+        },
+        {
           "id": "bspExplorer",
           "name": "BSP Applications",
           "type": "webview"
-        },
-        {
-          "id": "bspProfiles",
-          "name": "SAP Profiles"
         }
       ]
     },
