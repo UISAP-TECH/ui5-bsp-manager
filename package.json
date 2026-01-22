@@ -1,8 +1,10 @@
 {
   "name": "ui5-bsp-manager",
-  "displayName": "ui5-bsp-manager",
-  "description": "SAP BSP Upload & Download Manager for UI5",
+  "displayName": "UI5 BSP Manager",
+  "description": "SAP BSP Upload & Download Manager for UI5 Applications",
   "version": "0.0.1",
+  "publisher": "uisap",
+  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.108.1"
   },
@@ -14,10 +16,132 @@
   "contributes": {
     "commands": [
       {
-        "command": "ui5-bsp-manager.helloWorld",
-        "title": "Hello World"
+        "command": "bspManager.listBsp",
+        "title": "List BSP Applications",
+        "category": "BSP Manager",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "bspManager.downloadBsp",
+        "title": "Download BSP Application",
+        "category": "BSP Manager",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "bspManager.uploadBsp",
+        "title": "Upload/Deploy BSP Application",
+        "category": "BSP Manager",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bspManager.configure",
+        "title": "Configure SAP Connection",
+        "category": "BSP Manager",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "bspManager.refreshExplorer",
+        "title": "Refresh BSP Explorer",
+        "category": "BSP Manager",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bspManager.addProfile",
+        "title": "Add SAP Profile",
+        "category": "BSP Manager",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bspManager.switchProfile",
+        "title": "Switch SAP Profile",
+        "category": "BSP Manager",
+        "icon": "$(account)"
+      },
+      {
+        "command": "bspManager.filterBsp",
+        "title": "Filter BSP Applications",
+        "category": "BSP Manager",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "bspManager.deleteProfile",
+        "title": "Delete SAP Profile",
+        "category": "BSP Manager",
+        "icon": "$(trash)"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bspManager",
+          "title": "BSP Manager",
+          "icon": "resources/bsp-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "bspManager": [
+        {
+          "id": "bspExplorer",
+          "name": "BSP Applications"
+        },
+        {
+          "id": "bspProfiles",
+          "name": "SAP Profiles"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "bspManager.refreshExplorer",
+          "when": "view == bspExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "bspManager.filterBsp",
+          "when": "view == bspExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "bspManager.addProfile",
+          "when": "view == bspProfiles",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "bspManager.downloadBsp",
+          "when": "view == bspExplorer && viewItem == bspApplication",
+          "group": "inline"
+        },
+        {
+          "command": "bspManager.uploadBsp",
+          "when": "view == bspExplorer && viewItem == bspApplication",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "BSP Manager",
+      "properties": {
+        "bspManager.defaultProfile": {
+          "type": "string",
+          "default": "",
+          "description": "Default SAP profile to use"
+        },
+        "bspManager.downloadDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Default directory for downloading BSP applications"
+        },
+        "bspManager.autoCreateNwabaprc": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically create .nwabaprc file after download"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -26,6 +150,10 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "fast-xml-parser": "^4.3.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.108.1",
