@@ -333,7 +333,7 @@ export class ProfileFormPanel {
     </style>
 </head>
 <body>
-    <h1>${isEditing ? '✏️ Edit' : '➕ Add'} SAP Profile</h1>
+    <h1>${isEditing ? 'Edit' : 'Add'} SAP Profile</h1>
     
     <div id="messageBox" class="message hidden"></div>
 

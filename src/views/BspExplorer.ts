@@ -273,7 +273,7 @@ export class ProfileExplorerProvider implements vscode.TreeDataProvider<ProfileT
                     profile.name,
                     `${profile.server} (Client: ${profile.client})`,
                     profile.name === defaultProfile,
-                    'profile'
+                    profile.name === defaultProfile ? 'profileDefault' : 'profile'
                 )
             )
         );
@@ -281,6 +281,11 @@ export class ProfileExplorerProvider implements vscode.TreeDataProvider<ProfileT
 
     getConfigService(): ConfigService {
         return this.configService;
+    }
+
+    async getTreeItemByProfileName(name: string): Promise<ProfileTreeItem | undefined> {
+        const children = await this.getChildren();
+        return children.find(item => item.label === name && (item.contextValue === 'profile' || item.contextValue === 'profileDefault'));
     }
 }
 
@@ -297,13 +302,14 @@ export class ProfileTreeItem extends vscode.TreeItem {
         this.tooltip = `${this.label}\n${this.serverInfo}${this.isDefault ? '\n(Default)' : ''}`;
         this.iconPath = this.getIcon();
 
-        if (contextValue === 'profile') {
-            this.command = {
-                command: 'bspManager.editProfile',
-                title: 'Edit Profile',
-                arguments: [this.label]
-            };
-        }
+        // Removed click command - use context menu instead
+        // if (contextValue === 'profile') {
+        //     this.command = {
+        //         command: 'bspManager.editProfile',
+        //         title: 'Edit Profile',
+        //         arguments: [this.label]
+        //     };
+        // }
     }
 
     private getIcon(): vscode.ThemeIcon {

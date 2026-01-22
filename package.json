@@ -74,6 +74,24 @@
         "title": "Edit SAP Profile",
         "category": "BSP Manager",
         "icon": "$(edit)"
+      },
+      {
+        "command": "bspManager.loadBspFromProfile",
+        "title": "Load BSP Applications",
+        "category": "BSP Manager",
+        "icon": "$(database)"
+      },
+      {
+        "command": "bspManager.setDefaultProfile",
+        "title": "Set as Default Profile",
+        "category": "BSP Manager",
+        "icon": "$(star)"
+      },
+      {
+        "command": "bspManager.unsetDefaultProfile",
+        "title": "Unset Default Profile",
+        "category": "BSP Manager",
+        "icon": "$(star-empty)"
       }
     ],
     "viewsContainers": {
@@ -106,11 +124,6 @@
           "group": "navigation"
         },
         {
-          "command": "bspManager.filterBsp",
-          "when": "view == bspExplorer",
-          "group": "navigation"
-        },
-        {
           "command": "bspManager.addProfile",
           "when": "view == bspProfiles",
           "group": "navigation"
@@ -126,6 +139,31 @@
           "command": "bspManager.uploadBsp",
           "when": "view == bspExplorer && viewItem == bspApplication",
           "group": "inline"
+        },
+        {
+          "command": "bspManager.loadBspFromProfile",
+          "when": "view == bspProfiles && (viewItem == profile || viewItem == profileDefault)",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "bspManager.setDefaultProfile",
+          "when": "view == bspProfiles && viewItem == profile",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "bspManager.unsetDefaultProfile",
+          "when": "view == bspProfiles && viewItem == profileDefault",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "bspManager.editProfile",
+          "when": "view == bspProfiles && (viewItem == profile || viewItem == profileDefault)",
+          "group": "2_modify@1"
+        },
+        {
+          "command": "bspManager.deleteProfile",
+          "when": "view == bspProfiles && (viewItem == profile || viewItem == profileDefault)",
+          "group": "2_modify@2"
         }
       ]
     },

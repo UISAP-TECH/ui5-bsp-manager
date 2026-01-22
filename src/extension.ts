@@ -23,12 +23,30 @@ export function activate(context: vscode.ExtensionContext) {
     // Initialize Profile tree view provider
     const profileExplorerProvider = new ProfileExplorerProvider(context, configService);
 
+    // Update status bar based on CURRENTLY LOADED profile (not default)
+    const updateStatusBar = () => {
+        const currentProfileName = bspWebviewProvider.getCurrentProfile();
+        
+        if (currentProfileName) {
+            const profile = configService.getProfile(currentProfileName);
+            if (profile) {
+                statusBarItem.text = `$(server) ${profile.name}`;
+                statusBarItem.tooltip = `Active SAP Profile: ${profile.name}\n${profile.server} (Client: ${profile.client})`;
+                statusBarItem.show();
+            } else {
+                statusBarItem.hide();
+            }
+        } else {
+            statusBarItem.hide(); // Hide if no profile loaded
+        }
+    };
+
     // Function to refresh all views
     const refreshAll = () => {
         configService.reload();
-        bspWebviewProvider.loadApplications();
+        // Don't auto-load webview. User must explicitly "Load BSP Applications".
         profileExplorerProvider.refresh();
-        updateStatusBar(configService);
+        updateStatusBar();
     };
 
     // Register webview provider for BSP Explorer
@@ -42,11 +60,21 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataProvider: profileExplorerProvider
     });
 
-    // Create status bar item
+    // Create status bar item for Active Profile
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusBarItem.command = 'bspManager.switchProfile';
-    updateStatusBar(configService);
-    statusBarItem.show();
+    // Remove command from status bar if user just wants display? 
+    // Or keep 'switchProfile'? User said "seçili olmasın".
+    // If hidden, command doesn't matter.
+    statusBarItem.command = 'bspManager.switchProfile'; 
+    updateStatusBar(); // Will hide initially if no profile loaded
+    
+    // Create status bar item for Add Profile (Persistent accessibility)
+    const addProfileStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    addProfileStatusBar.text = "$(add) New Profile";
+    addProfileStatusBar.command = 'bspManager.addProfile';
+    addProfileStatusBar.tooltip = "Add a new SAP Profile";
+    addProfileStatusBar.show();
+    context.subscriptions.push(addProfileStatusBar);
 
     // Register commands
     const commands = [
@@ -185,7 +213,14 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Refresh BSP Explorer
         vscode.commands.registerCommand('bspManager.refreshExplorer', () => {
-            bspWebviewProvider.loadApplications();
+            // Loading manually triggers status bar update in loadApplications? 
+            // updateStatusBar logic reads currentProfile.
+            // But loadApplications is valid. 
+            // We should call updateStatusBar AFTER loadApplications completes?
+            // loadApplications is async. It sets currentProfile.
+            bspWebviewProvider.loadApplications().then(() => {
+                updateStatusBar();
+            });
         }),
 
         // Add profile (opens profile form)
@@ -195,17 +230,20 @@ export function activate(context: vscode.ExtensionContext) {
             });
         }),
 
-        // Edit profile (opens profile form with existing data)
-        vscode.commands.registerCommand('bspManager.editProfile', (profileName?: string) => {
+        // Edit profile
+        vscode.commands.registerCommand('bspManager.editProfile', (arg?: any) => {
+            const profileName = getProfileName(arg);
             ProfileFormPanel.createOrShow(context.extensionUri, configService, profileName, () => {
                 refreshAll();
             });
         }),
 
         // Switch profile
-        vscode.commands.registerCommand('bspManager.switchProfile', async (profileName?: string) => {
-            const profiles = configService.getProfiles();
+        vscode.commands.registerCommand('bspManager.switchProfile', async (arg?: any) => {
+            // Check context menu/arg call
+            let targetProfile = getProfileName(arg);
             
+            const profiles = configService.getProfiles();
             if (profiles.length === 0) {
                 const create = await vscode.window.showWarningMessage(
                     'No SAP profiles configured.',
@@ -217,10 +255,8 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            let targetProfile: string | undefined = profileName;
-
             if (!targetProfile) {
-                const currentProfile = configService.getDefaultProfile();
+                const currentProfile = bspWebviewProvider.getCurrentProfile(); // Use loaded profile for check
                 
                 const selected = await vscode.window.showQuickPick(
                     profiles.map(p => ({
@@ -228,20 +264,67 @@ export function activate(context: vscode.ExtensionContext) {
                         description: `${p.server} (Client: ${p.client})`,
                         profileName: p.name
                     })),
-                    { placeHolder: 'Select SAP profile to use' }
+                    { placeHolder: 'Select SAP profile to switch to' }
                 );
 
-                if (!selected) {
-                    return;
-                }
-
+                if (!selected) return;
                 targetProfile = selected.profileName;
             }
 
-            await configService.setDefaultProfile(targetProfile);
+            // Switch = Load
+            // await configService.setDefaultProfile(targetProfile); // User doesn't want default change on switch?
+            // The command is "Switch Profile".
+            
             await bspWebviewProvider.loadApplications(targetProfile);
-            updateStatusBar(configService);
+            updateStatusBar();
+            
+            // Select/Reveal in Tree View
+            const item = await profileExplorerProvider.getTreeItemByProfileName(targetProfile);
+            if (item) {
+                profileExplorerView.reveal(item, { select: true, focus: false });
+            }
+
             vscode.window.showInformationMessage(`Switched to profile "${targetProfile}"`);
+        }),
+
+        // Load BSPs from profile (Run/Load context menu action)
+        vscode.commands.registerCommand('bspManager.loadBspFromProfile', async (arg?: any) => {
+             const profileName = getProfileName(arg);
+             if (profileName) {
+                 await bspWebviewProvider.loadApplications(profileName);
+                 updateStatusBar(); // Update status bar after load
+                 
+                 // Select/Reveal in Tree View
+                 const item = await profileExplorerProvider.getTreeItemByProfileName(profileName);
+                 if (item) {
+                    profileExplorerView.reveal(item, { select: true, focus: false });
+                 }
+
+                 // Focus the webview after a short delay to allow it to render
+                 setTimeout(() => {
+                     vscode.commands.executeCommand('bspExplorer.focus');
+                 }, 100);
+
+             } else {
+                 vscode.window.showErrorMessage('Could not determine profile name.');
+             }
+        }),
+
+        // Set Default Profile
+        vscode.commands.registerCommand('bspManager.setDefaultProfile', async (arg?: any) => {
+             const profileName = getProfileName(arg);
+             if (profileName) {
+                 await configService.setDefaultProfile(profileName);
+                 refreshAll(); 
+                 vscode.window.showInformationMessage(`"${profileName}" is now the default profile.`);
+             }
+        }),
+
+        // Unset Default Profile
+        vscode.commands.registerCommand('bspManager.unsetDefaultProfile', async (arg?: any) => {
+             await configService.setDefaultProfile(''); // Clear default
+             refreshAll();
+             vscode.window.showInformationMessage('Default profile cleared.');
         }),
 
         // Filter BSP applications (now just focuses webview)
@@ -250,16 +333,16 @@ export function activate(context: vscode.ExtensionContext) {
         }),
 
         // Delete profile
-        vscode.commands.registerCommand('bspManager.deleteProfile', async (profileName?: string) => {
+        vscode.commands.registerCommand('bspManager.deleteProfile', async (arg?: any) => {
             const profiles = configService.getProfiles();
-            
             if (profiles.length === 0) {
                 vscode.window.showInformationMessage('No profiles to delete.');
                 return;
             }
 
-            let targetProfile = profileName;
+            let targetProfile = getProfileName(arg);
 
+            // ... selection logic same as before ...
             if (!targetProfile) {
                 const selected = await vscode.window.showQuickPick(
                     profiles.map(p => ({
@@ -268,10 +351,7 @@ export function activate(context: vscode.ExtensionContext) {
                     })),
                     { placeHolder: 'Select profile to delete' }
                 );
-
-                if (!selected) {
-                    return;
-                }
+                if (!selected) return;
                 targetProfile = selected.label;
             }
 
@@ -283,16 +363,13 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (confirm === 'Delete') {
                 await configService.deleteProfile(targetProfile);
-                refreshAll();
                 
-                // If deleted profile was default, switch to another
-                const remaining = configService.getProfiles();
-                if (remaining.length > 0) {
-                    await configService.setDefaultProfile(remaining[0].name);
-                    await bspWebviewProvider.loadApplications(remaining[0].name);
+                // If deleted was current view, clear view?
+                if (bspWebviewProvider.getCurrentProfile() === targetProfile) {
+                    bspWebviewProvider.loadApplications(''); // Clear
                 }
                 
-                updateStatusBar(configService);
+                refreshAll();
                 vscode.window.showInformationMessage(`Profile "${targetProfile}" deleted.`);
             }
         })
@@ -305,27 +382,18 @@ export function activate(context: vscode.ExtensionContext) {
         statusBarItem,
         ...commands
     );
-
-    // DON'T auto-load BSP applications - wait for user to click a profile
-    // The webview will show "Click a profile to load BSP applications"
 }
 
-function updateStatusBar(configService: ConfigService): void {
-    const defaultProfile = configService.getDefaultProfile();
-    
-    if (defaultProfile) {
-        const profile = configService.getProfile(defaultProfile);
-        if (profile) {
-            statusBarItem.text = `$(server) ${profile.name}`;
-            statusBarItem.tooltip = `SAP Profile: ${profile.name}\n${profile.server} (Client: ${profile.client})\nClick to switch profile`;
-        } else {
-            statusBarItem.text = '$(server) No Profile';
-            statusBarItem.tooltip = 'Click to configure SAP profile';
+// Helper to handle mixed argument types (string | TreeItem) from commands
+function getProfileName(arg: any): string | undefined {
+    if (typeof arg === 'string') return arg;
+    if (arg && typeof arg === 'object') {
+        if (arg.label) {
+            // Check if label is string or TreeItemLabel
+            return typeof arg.label === 'string' ? arg.label : arg.label.label;
         }
-    } else {
-        statusBarItem.text = '$(server) No Profile';
-        statusBarItem.tooltip = 'Click to configure SAP profile';
     }
+    return undefined;
 }
 
 export function deactivate() {
