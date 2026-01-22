@@ -68,6 +68,12 @@
         "title": "Delete SAP Profile",
         "category": "BSP Manager",
         "icon": "$(trash)"
+      },
+      {
+        "command": "bspManager.editProfile",
+        "title": "Edit SAP Profile",
+        "category": "BSP Manager",
+        "icon": "$(edit)"
       }
     ],
     "viewsContainers": {
@@ -83,7 +89,8 @@
       "bspManager": [
         {
           "id": "bspExplorer",
-          "name": "BSP Applications"
+          "name": "BSP Applications",
+          "type": "webview"
         },
         {
           "id": "bspProfiles",

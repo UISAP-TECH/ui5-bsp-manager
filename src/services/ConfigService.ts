@@ -37,6 +37,13 @@ export class ConfigService {
     }
 
     /**
+     * Reload profiles from storage (for external refresh)
+     */
+    reload(): void {
+        this.loadProfiles();
+    }
+
+    /**
      * Save profiles to global state
      */
     private async saveProfiles(): Promise<void> {

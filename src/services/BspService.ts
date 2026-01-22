@@ -16,10 +16,8 @@ export interface BspApplication {
 
 export interface BspFile {
     name: string;
-    path: string;
     type: 'file' | 'folder';
     mimeType?: string;
-    children?: BspFile[];
 }
 
 export class BspService {
@@ -39,7 +37,6 @@ export class BspService {
      */
     async listBspApplications(filter?: { name?: string; package?: string }): Promise<BspApplication[]> {
         try {
-            // Get list of UI5 BSP applications using ADT filestore API
             const response = await this.connection.get('/sap/bc/adt/filestore/ui5-bsp/objects', {
                 headers: {
                     'Accept': 'application/atom+xml'
@@ -82,44 +79,50 @@ export class BspService {
     }
 
     /**
-     * Get the structure of a BSP application (files and folders)
+     * Get contents of a path within BSP application
+     * @param appName - BSP application name
+     * @param relativePath - relative path within the app (empty for root)
      */
-    async getBspStructure(appName: string): Promise<BspFile[]> {
+    async getContents(appName: string, relativePath: string = ''): Promise<BspFile[]> {
         try {
-            const response = await this.connection.get(
-                `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(appName)}/content`,
-                {
-                    headers: {
-                        'Accept': 'application/atom+xml'
-                    }
+            // Build URL - SAP expects paths encoded with %2f instead of /
+            let url = `/sap/bc/adt/filestore/ui5-bsp/objects/${appName}`;
+            if (relativePath) {
+                // Encode the path: appName%2frelativePath
+                const encodedPath = `${appName}%2f${relativePath.replace(/\//g, '%2f')}`;
+                url = `/sap/bc/adt/filestore/ui5-bsp/objects/${encodedPath}`;
+            }
+            url += '/content';
+
+            console.log(`Fetching contents: ${url}`);
+
+            const response = await this.connection.get(url, {
+                headers: {
+                    'Accept': 'application/atom+xml'
                 }
-            );
+            });
 
             const parsed = this.xmlParser.parse(response);
-            return this.parseFileStructure(parsed, '');
+            return this.parseContents(parsed);
         } catch (error) {
-            console.error('Failed to get BSP structure:', error);
-            throw new Error(`Failed to get BSP structure for "${appName}": ${error}`);
+            console.error(`Failed to get contents for path "${relativePath}":`, error);
+            return [];
         }
     }
 
     /**
      * Download a single file from BSP application
      */
-    async downloadFile(appName: string, filePath: string): Promise<Buffer> {
-        try {
-            // Clean the file path (remove leading slash if present)
-            const cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-            
-            const response = await this.connection.getRaw(
-                `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(appName)}/${encodeURIComponent(cleanPath)}/content`
-            );
-
-            return response;
-        } catch (error) {
-            console.error(`Failed to download file ${filePath}:`, error);
-            throw new Error(`Failed to download file "${filePath}": ${error}`);
-        }
+    async downloadFile(appName: string, relativePath: string): Promise<Buffer> {
+        // Build URL - SAP expects paths encoded with %2f instead of /
+        // Full path: appName%2frelativePath
+        const encodedPath = `${appName}%2f${relativePath.replace(/\//g, '%2f')}`;
+        const url = `/sap/bc/adt/filestore/ui5-bsp/objects/${encodedPath}/content`;
+        
+        console.log(`Downloading: ${url}`);
+        
+        const response = await this.connection.getRaw(url);
+        return response;
     }
 
     /**
@@ -130,32 +133,91 @@ export class BspService {
         targetDirectory: string,
         progress: vscode.Progress<{ message?: string; increment?: number }>
     ): Promise<void> {
-        // Get application structure
-        progress.report({ message: 'Getting application structure...' });
-        const structure = await this.getBspStructure(appName);
-        
-        // Count total files for progress
-        const totalFiles = this.countFiles(structure);
-        let downloadedFiles = 0;
-
-        // Create target directory if it doesn't exist
+        // Create target directory with app name
         const appDirectory = path.join(targetDirectory, appName);
         if (!fs.existsSync(appDirectory)) {
             fs.mkdirSync(appDirectory, { recursive: true });
         }
 
+        progress.report({ message: 'Getting application structure...' });
+        
+        // Get root contents (files and folders directly in the app)
+        const rootContents = await this.getContents(appName, '');
+        
+        console.log(`Root contents for ${appName}:`, JSON.stringify(rootContents, null, 2));
+        
         // Download all files recursively
-        await this.downloadFilesRecursively(
+        const filesDownloaded = await this.downloadRecursively(
             appName,
-            structure,
             appDirectory,
-            '',
-            progress,
-            totalFiles,
-            (count) => { downloadedFiles = count; }
+            rootContents,
+            '', // Start with empty relative path
+            progress
         );
 
-        progress.report({ message: `Downloaded ${downloadedFiles} files`, increment: 100 });
+        progress.report({ message: `Downloaded ${filesDownloaded} files` });
+    }
+
+    /**
+     * Recursively download files and folders
+     */
+    private async downloadRecursively(
+        appName: string,
+        localBaseDir: string,
+        items: BspFile[],
+        currentRelativePath: string,
+        progress: vscode.Progress<{ message?: string; increment?: number }>
+    ): Promise<number> {
+        let count = 0;
+
+        for (const item of items) {
+            // Build relative path for API calls
+            const itemRelativePath = currentRelativePath 
+                ? `${currentRelativePath}/${item.name}` 
+                : item.name;
+            
+            // Build local path
+            const localPath = path.join(localBaseDir, item.name);
+
+            console.log(`Processing: ${item.name} (${item.type}) - relativePath: ${itemRelativePath}`);
+
+            if (item.type === 'folder') {
+                // Create local folder
+                if (!fs.existsSync(localPath)) {
+                    fs.mkdirSync(localPath, { recursive: true });
+                }
+
+                // Get folder contents from SAP
+                progress.report({ message: `Scanning: ${item.name}/` });
+                const folderContents = await this.getContents(appName, itemRelativePath);
+                
+                console.log(`Folder ${itemRelativePath} contents:`, JSON.stringify(folderContents, null, 2));
+                
+                // Recursively download folder contents
+                const subCount = await this.downloadRecursively(
+                    appName,
+                    localPath,
+                    folderContents,
+                    itemRelativePath,
+                    progress
+                );
+                count += subCount;
+            } else {
+                // Download file
+                progress.report({ message: `Downloading: ${item.name}` });
+                
+                try {
+                    const content = await this.downloadFile(appName, itemRelativePath);
+                    fs.writeFileSync(localPath, content);
+                    count++;
+                    console.log(`Downloaded: ${itemRelativePath}`);
+                } catch (error) {
+                    console.error(`Error downloading ${itemRelativePath}:`, error);
+                }
+            }
+        }
+
+        return count;
     }
 
     /**
@@ -164,7 +226,7 @@ export class BspService {
     async getBspDetails(appName: string): Promise<{ package: string; description: string; transport?: string }> {
         try {
             const response = await this.connection.get(
-                `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(appName)}`,
+                `/sap/bc/adt/filestore/ui5-bsp/objects/${appName}`,
                 {
                     headers: {
                         'Accept': 'application/atom+xml'
@@ -202,7 +264,6 @@ export class BspService {
     }
 
     private extractPackage(entry: any): string {
-        // Try to find package in different possible locations
         const content = entry.content || entry['atom:content'] || {};
         const properties = content['m:properties'] || content.properties || entry.properties || {};
         return properties['d:Package'] || properties.Package || properties.package || '$TMP';
@@ -214,116 +275,62 @@ export class BspService {
         return properties[`d:${propName}`] || properties[propName];
     }
 
-    private parseFileStructure(parsed: any, basePath: string): BspFile[] {
+    /**
+     * Parse XML response to get file/folder list
+     */
+    private parseContents(parsed: any): BspFile[] {
         const entries = this.getEntries(parsed);
         const files: BspFile[] = [];
 
         for (const entry of entries) {
-            const title = this.getAttr(entry, 'title') || entry.title || '';
-            const category = entry.category || entry['atom:category'];
-            const term = category?.['@_term'] || category?.term || '';
+            const fullTitle = this.getAttr(entry, 'title') || entry.title || '';
             
-            const isFolder = term.includes('folder') || term.includes('directory');
-            const filePath = basePath ? `${basePath}/${title}` : title;
+            // Skip if no title
+            if (!fullTitle) {continue;}
+            
+            // SAP returns full path like "APP_NAME/folder/file.js"
+            // We only need the last segment (filename or folder name)
+            const pathParts = fullTitle.split('/');
+            const name = pathParts[pathParts.length - 1];
+            
+            // Skip if empty name after parsing
+            if (!name) {continue;}
+            
+            // Determine if folder or file based on category term
+            const category = entry.category || entry['atom:category'];
+            let isFolder = false;
+            
+            if (category) {
+                const term = category['@_term'] || category.term || '';
+                // Check for folder indicators
+                isFolder = /folder|directory/i.test(term);
+            }
+            
+            // Also check link for contents indicator (folders typically have contents link)
+            if (!isFolder) {
+                const links = entry.link || entry['atom:link'] || [];
+                const linkArray = Array.isArray(links) ? links : [links];
+                
+                for (const link of linkArray) {
+                    const rel = link['@_rel'] || link.rel || '';
+                    if (rel === 'contents' || rel.includes('contents')) {
+                        isFolder = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Get content type for files
+            const contentType = entry.content?.['@_type'] || entry['atom:content']?.['@_type'];
 
             files.push({
-                name: title,
-                path: filePath,
+                name: name,
                 type: isFolder ? 'folder' : 'file',
-                mimeType: isFolder ? undefined : (entry['atom:content']?.['@_type'] || 'application/octet-stream')
+                mimeType: isFolder ? undefined : contentType
             });
         }
 
+        console.log('Parsed contents:', JSON.stringify(files, null, 2));
         return files;
-    }
-
-    private countFiles(files: BspFile[]): number {
-        let count = 0;
-        for (const file of files) {
-            if (file.type === 'file') {
-                count++;
-            }
-            if (file.children) {
-                count += this.countFiles(file.children);
-            }
-        }
-        return count || 1; // At least 1 to avoid division by zero
-    }
-
-    private async downloadFilesRecursively(
-        appName: string,
-        files: BspFile[],
-        targetDir: string,
-        currentPath: string,
-        progress: vscode.Progress<{ message?: string; increment?: number }>,
-        totalFiles: number,
-        updateCount: (count: number) => void
-    ): Promise<number> {
-        let downloadedCount = 0;
-
-        for (const file of files) {
-            const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
-            const localPath = path.join(targetDir, file.name);
-
-            if (file.type === 'folder') {
-                // Create directory
-                if (!fs.existsSync(localPath)) {
-                    fs.mkdirSync(localPath, { recursive: true });
-                }
-
-                // Get folder contents
-                try {
-                    const folderStructure = await this.getFolderContents(appName, filePath);
-                    const subCount = await this.downloadFilesRecursively(
-                        appName,
-                        folderStructure,
-                        localPath,
-                        filePath,
-                        progress,
-                        totalFiles,
-                        updateCount
-                    );
-                    downloadedCount += subCount;
-                } catch (error) {
-                    console.error(`Failed to get folder contents for ${filePath}:`, error);
-                }
-            } else {
-                // Download file
-                try {
-                    progress.report({ 
-                        message: `Downloading: ${file.name}`,
-                        increment: (1 / totalFiles) * 100
-                    });
-
-                    const content = await this.downloadFile(appName, filePath);
-                    fs.writeFileSync(localPath, content);
-                    downloadedCount++;
-                    updateCount(downloadedCount);
-                } catch (error) {
-                    console.error(`Failed to download ${filePath}:`, error);
-                }
-            }
-        }
-
-        return downloadedCount;
-    }
-
-    private async getFolderContents(appName: string, folderPath: string): Promise<BspFile[]> {
-        try {
-            const response = await this.connection.get(
-                `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(appName)}/${encodeURIComponent(folderPath)}/content`,
-                {
-                    headers: {
-                        'Accept': 'application/atom+xml'
-                    }
-                }
-            );
-
-            const parsed = this.xmlParser.parse(response);
-            return this.parseFileStructure(parsed, folderPath);
-        } catch (error) {
-            console.error(`Failed to get folder contents for ${folderPath}:`, error);
-            return [];
-        }
     }
 }

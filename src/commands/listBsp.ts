@@ -2,58 +2,27 @@ import * as vscode from 'vscode';
 import { BspExplorerProvider } from '../views/BspExplorer';
 
 export async function filterBspCommand(explorerProvider: BspExplorerProvider): Promise<void> {
-    const filterType = await vscode.window.showQuickPick(
-        [
-            { label: '$(search) Filter by Name', value: 'name' },
-            { label: '$(package) Filter by Package', value: 'package' },
-            { label: '$(filter) Filter by Both', value: 'both' },
-            { label: '$(close) Clear Filter', value: 'clear' }
-        ],
-        { placeHolder: 'Select filter type' }
-    );
+    const currentSearch = explorerProvider.getSearchTerm();
+    
+    const searchTerm = await vscode.window.showInputBox({
+        prompt: 'Search BSP applications (name, description, or package)',
+        placeHolder: 'e.g., ZUI5 or $TMP',
+        value: currentSearch,
+        valueSelection: [0, currentSearch.length]
+    });
 
-    if (!filterType) {
+    if (searchTerm === undefined) {
+        // User cancelled
         return;
     }
 
-    if (filterType.value === 'clear') {
-        explorerProvider.clearFilter();
-        vscode.window.showInformationMessage('Filter cleared');
-        return;
+    if (searchTerm.trim() === '') {
+        explorerProvider.clearSearch();
+        vscode.window.showInformationMessage('Search cleared - showing all BSP applications');
+    } else {
+        explorerProvider.setSearchTerm(searchTerm);
+        vscode.window.showInformationMessage(`Filtering by: "${searchTerm}"`);
     }
-
-    let nameFilter: string | undefined;
-    let packageFilter: string | undefined;
-
-    if (filterType.value === 'name' || filterType.value === 'both') {
-        nameFilter = await vscode.window.showInputBox({
-            prompt: 'Enter BSP name filter (partial match)',
-            placeHolder: 'e.g., ZUI5'
-        });
-
-        if (filterType.value === 'name' && !nameFilter) {
-            return;
-        }
-    }
-
-    if (filterType.value === 'package' || filterType.value === 'both') {
-        packageFilter = await vscode.window.showInputBox({
-            prompt: 'Enter package filter (partial match)',
-            placeHolder: 'e.g., ZMY_PACKAGE'
-        });
-
-        if (filterType.value === 'package' && !packageFilter) {
-            return;
-        }
-    }
-
-    explorerProvider.setFilter(nameFilter, packageFilter);
-    
-    const filterDescription = [];
-    if (nameFilter) {filterDescription.push(`Name: "${nameFilter}"`);}
-    if (packageFilter) {filterDescription.push(`Package: "${packageFilter}"`);}
-    
-    vscode.window.showInformationMessage(`Filter applied: ${filterDescription.join(', ')}`);
 }
 
 export async function listBspCommand(explorerProvider: BspExplorerProvider): Promise<void> {

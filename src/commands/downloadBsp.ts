@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { BspExplorerProvider, BspTreeItem } from '../views/BspExplorer';
-import { ConfigService } from '../services/ConfigService';
 
 export async function downloadBspCommand(
     explorerProvider: BspExplorerProvider,
@@ -85,19 +84,13 @@ export async function downloadBspCommand(
                 // Get BSP details for .nwabaprc
                 const details = await bspService.getBspDetails(bspName!);
 
-                // Create .nwabaprc if enabled
+                // Create .nwabaprc automatically without prompting for transport
                 const autoCreate = vscode.workspace.getConfiguration('bspManager').get<boolean>('autoCreateNwabaprc', true);
                 
                 if (autoCreate) {
                     const appDir = path.join(targetDirectory, bspName!);
                     
-                    // Prompt for transport request
-                    const transport = await vscode.window.showInputBox({
-                        prompt: 'Enter Transport Request (optional)',
-                        placeHolder: 'e.g., S4DK900046',
-                        value: details.transport || ''
-                    });
-
+                    // Auto-create .nwabaprc with existing transport (if any) - no prompt
                     await configService.createNwabaprcFromProfile(
                         appDir,
                         currentProfile,
@@ -105,7 +98,7 @@ export async function downloadBspCommand(
                             package: details.package,
                             bspName: bspName!,
                             bspText: details.description,
-                            transport: transport || ''
+                            transport: details.transport || ''
                         }
                     );
                 }

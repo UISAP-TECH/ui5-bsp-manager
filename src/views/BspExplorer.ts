@@ -7,20 +7,62 @@ export class BspExplorerProvider implements vscode.TreeDataProvider<BspTreeItem>
     private _onDidChangeTreeData: vscode.EventEmitter<BspTreeItem | undefined | null | void> = new vscode.EventEmitter<BspTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<BspTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    private applications: BspApplication[] = [];
+    private allApplications: BspApplication[] = []; // All loaded apps
+    private applications: BspApplication[] = []; // Filtered apps
     private currentProfile: string | undefined;
     private bspService: BspService | undefined;
-    private configService: ConfigService;
-    private filter: { name?: string; package?: string } = {};
+    private searchTerm: string = ''; // Current search term
     private isLoading: boolean = false;
     private errorMessage: string | undefined;
 
-    constructor(private context: vscode.ExtensionContext) {
-        this.configService = new ConfigService(context);
-    }
+    constructor(
+        private context: vscode.ExtensionContext,
+        private configService: ConfigService
+    ) {}
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
+    }
+
+    /**
+     * Set search term and filter applications instantly (no server call)
+     */
+    setSearchTerm(term: string): void {
+        this.searchTerm = term.toLowerCase().trim();
+        this.filterApplications();
+        this.refresh();
+    }
+
+    /**
+     * Clear search and show all applications
+     */
+    clearSearch(): void {
+        this.searchTerm = '';
+        this.applications = [...this.allApplications];
+        this.refresh();
+    }
+
+    /**
+     * Get current search term
+     */
+    getSearchTerm(): string {
+        return this.searchTerm;
+    }
+
+    /**
+     * Filter applications locally based on search term
+     */
+    private filterApplications(): void {
+        if (!this.searchTerm) {
+            this.applications = [...this.allApplications];
+            return;
+        }
+
+        this.applications = this.allApplications.filter(app => 
+            app.name.toLowerCase().includes(this.searchTerm) ||
+            app.description.toLowerCase().includes(this.searchTerm) ||
+            app.package.toLowerCase().includes(this.searchTerm)
+        );
     }
 
     async loadApplications(profileName?: string): Promise<void> {
@@ -32,7 +74,7 @@ export class BspExplorerProvider implements vscode.TreeDataProvider<BspTreeItem>
             const targetProfile = profileName || this.configService.getDefaultProfile();
             
             if (!targetProfile) {
-                this.errorMessage = 'No SAP profile configured. Click to add one.';
+                this.errorMessage = 'No SAP profile configured. Click + to add one.';
                 this.isLoading = false;
                 this.refresh();
                 return;
@@ -59,10 +101,12 @@ export class BspExplorerProvider implements vscode.TreeDataProvider<BspTreeItem>
 
             this.bspService = new BspService(connection);
             this.currentProfile = targetProfile;
-            this.applications = await this.bspService.listBspApplications(this.filter);
+            this.allApplications = await this.bspService.listBspApplications();
+            this.filterApplications(); // Apply any existing search term
             
         } catch (error) {
             this.errorMessage = `Error: ${error}`;
+            this.allApplications = [];
             this.applications = [];
         }
 
@@ -70,14 +114,18 @@ export class BspExplorerProvider implements vscode.TreeDataProvider<BspTreeItem>
         this.refresh();
     }
 
+    // Deprecated: use setSearchTerm instead
     setFilter(name?: string, packageName?: string): void {
-        this.filter = { name, package: packageName };
-        this.loadApplications(this.currentProfile);
+        if (name) {
+            this.setSearchTerm(name);
+        } else {
+            this.clearSearch();
+        }
     }
 
+    // Deprecated: use clearSearch instead
     clearFilter(): void {
-        this.filter = {};
-        this.loadApplications(this.currentProfile);
+        this.clearSearch();
     }
 
     getTreeItem(element: BspTreeItem): vscode.TreeItem {
@@ -86,7 +134,6 @@ export class BspExplorerProvider implements vscode.TreeDataProvider<BspTreeItem>
 
     getChildren(element?: BspTreeItem): Thenable<BspTreeItem[]> {
         if (element) {
-            // No children for BSP applications in this view
             return Promise.resolve([]);
         }
 
@@ -180,16 +227,15 @@ export class BspTreeItem extends vscode.TreeItem {
     }
 }
 
-// Profile Explorer Provider
+// Profile Explorer Provider - now receives shared ConfigService
 export class ProfileExplorerProvider implements vscode.TreeDataProvider<ProfileTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<ProfileTreeItem | undefined | null | void> = new vscode.EventEmitter<ProfileTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<ProfileTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    private configService: ConfigService;
-
-    constructor(private context: vscode.ExtensionContext) {
-        this.configService = new ConfigService(context);
-    }
+    constructor(
+        private context: vscode.ExtensionContext,
+        private configService: ConfigService
+    ) {}
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -253,8 +299,8 @@ export class ProfileTreeItem extends vscode.TreeItem {
 
         if (contextValue === 'profile') {
             this.command = {
-                command: 'bspManager.switchProfile',
-                title: 'Switch to this profile',
+                command: 'bspManager.editProfile',
+                title: 'Edit Profile',
                 arguments: [this.label]
             };
         }

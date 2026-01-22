@@ -1,28 +1,43 @@
 import * as vscode from 'vscode';
-import { BspExplorerProvider, ProfileExplorerProvider } from './views/BspExplorer';
+import { ProfileExplorerProvider } from './views/BspExplorer';
+import { BspWebviewProvider } from './views/BspWebviewProvider';
+import { ProfileFormPanel } from './views/ProfileFormPanel';
 import { ConfigService } from './services/ConfigService';
-import { downloadBspCommand } from './commands/downloadBsp';
 import { uploadBspCommand } from './commands/uploadBsp';
-import { filterBspCommand, listBspCommand } from './commands/listBsp';
 
 let statusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('BSP Manager extension is now active!');
 
-    // Initialize services
+    // Initialize SHARED config service
     const configService = new ConfigService(context);
 
-    // Initialize tree view providers
-    const bspExplorerProvider = new BspExplorerProvider(context);
-    const profileExplorerProvider = new ProfileExplorerProvider(context);
+    // Initialize BSP Webview provider (with inline search)
+    const bspWebviewProvider = new BspWebviewProvider(
+        context.extensionUri,
+        context,
+        configService
+    );
 
-    // Register tree views
-    const bspExplorerView = vscode.window.createTreeView('bspExplorer', {
-        treeDataProvider: bspExplorerProvider,
-        showCollapseAll: true
-    });
+    // Initialize Profile tree view provider
+    const profileExplorerProvider = new ProfileExplorerProvider(context, configService);
 
+    // Function to refresh all views
+    const refreshAll = () => {
+        configService.reload();
+        bspWebviewProvider.loadApplications();
+        profileExplorerProvider.refresh();
+        updateStatusBar(configService);
+    };
+
+    // Register webview provider for BSP Explorer
+    const bspWebviewDisposable = vscode.window.registerWebviewViewProvider(
+        BspWebviewProvider.viewType,
+        bspWebviewProvider
+    );
+
+    // Register tree view for profiles
     const profileExplorerView = vscode.window.createTreeView('bspProfiles', {
         treeDataProvider: profileExplorerProvider
     });
@@ -35,14 +50,125 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register commands
     const commands = [
-        // List BSP applications
+        // List BSP applications (opens webview if closed)
         vscode.commands.registerCommand('bspManager.listBsp', () => {
-            listBspCommand(bspExplorerProvider);
+            vscode.commands.executeCommand('bspExplorer.focus');
         }),
 
-        // Download BSP application
-        vscode.commands.registerCommand('bspManager.downloadBsp', (item) => {
-            downloadBspCommand(bspExplorerProvider, item);
+        // Download BSP application (shows quickpick if no name provided)
+        vscode.commands.registerCommand('bspManager.downloadBsp', async () => {
+            const bspService = bspWebviewProvider.getBspService();
+            if (!bspService) {
+                vscode.window.showErrorMessage('Please connect to a SAP profile first.');
+                return;
+            }
+
+            // Show quick pick with BSP applications
+            const applications = await bspService.listBspApplications();
+            
+            const selected = await vscode.window.showQuickPick(
+                applications.map(app => ({
+                    label: app.name,
+                    description: app.description,
+                    detail: `Package: ${app.package}`
+                })),
+                {
+                    placeHolder: 'Select a BSP application to download',
+                    matchOnDescription: true,
+                    matchOnDetail: true
+                }
+            );
+
+            if (selected) {
+                vscode.commands.executeCommand('bspManager.downloadBspByName', selected.label);
+            }
+        }),
+
+        // Download BSP by name (from webview)
+        vscode.commands.registerCommand('bspManager.downloadBspByName', async (appName: string) => {
+            const bspService = bspWebviewProvider.getBspService();
+            const configService = bspWebviewProvider.getConfigService();
+            const currentProfile = bspWebviewProvider.getCurrentProfile();
+
+            if (!bspService || !currentProfile) {
+                vscode.window.showErrorMessage('Please connect to a SAP profile first.');
+                return;
+            }
+
+            // Get target directory
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            let defaultUri: vscode.Uri | undefined;
+            
+            const configDownloadDir = vscode.workspace.getConfiguration('bspManager').get<string>('downloadDirectory');
+            
+            if (configDownloadDir) {
+                defaultUri = vscode.Uri.file(configDownloadDir);
+            } else if (workspaceFolders && workspaceFolders.length > 0) {
+                defaultUri = workspaceFolders[0].uri;
+            }
+
+            const targetFolder = await vscode.window.showOpenDialog({
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+                defaultUri,
+                openLabel: 'Select Download Location'
+            });
+
+            if (!targetFolder || targetFolder.length === 0) {
+                return;
+            }
+
+            const targetDirectory = targetFolder[0].fsPath;
+            const path = await import('path');
+
+            // Download with progress
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `Downloading BSP: ${appName}`,
+                    cancellable: false
+                },
+                async (progress) => {
+                    try {
+                        await bspService.downloadBspApplication(appName, targetDirectory, progress);
+
+                        // Get BSP details for .nwabaprc
+                        const details = await bspService.getBspDetails(appName);
+
+                        // Create .nwabaprc automatically
+                        const autoCreate = vscode.workspace.getConfiguration('bspManager').get<boolean>('autoCreateNwabaprc', true);
+                        
+                        if (autoCreate) {
+                            const appDir = path.join(targetDirectory, appName);
+                            
+                            await configService.createNwabaprcFromProfile(
+                                appDir,
+                                currentProfile,
+                                {
+                                    package: details.package,
+                                    bspName: appName,
+                                    bspText: details.description,
+                                    transport: details.transport || ''
+                                }
+                            );
+                        }
+
+                        vscode.window.showInformationMessage(
+                            `Successfully downloaded "${appName}" to ${targetDirectory}`,
+                            'Open Folder'
+                        ).then(selection => {
+                            if (selection === 'Open Folder') {
+                                const appFolder = vscode.Uri.file(path.join(targetDirectory, appName));
+                                vscode.commands.executeCommand('vscode.openFolder', appFolder, { forceNewWindow: true });
+                            }
+                        });
+
+                    } catch (error) {
+                        vscode.window.showErrorMessage(`Failed to download BSP: ${error}`);
+                    }
+                }
+            );
         }),
 
         // Upload BSP application
@@ -50,38 +176,30 @@ export function activate(context: vscode.ExtensionContext) {
             uploadBspCommand(configService);
         }),
 
-        // Configure connection (alias for add profile)
-        vscode.commands.registerCommand('bspManager.configure', async () => {
-            const profile = await configService.promptNewProfile();
-            if (profile) {
-                profileExplorerProvider.refresh();
-                await configService.setDefaultProfile(profile.name);
-                await bspExplorerProvider.loadApplications(profile.name);
-                updateStatusBar(configService);
-                vscode.window.showInformationMessage(`Profile "${profile.name}" added and set as default.`);
-            }
+        // Configure connection (opens profile form)
+        vscode.commands.registerCommand('bspManager.configure', () => {
+            ProfileFormPanel.createOrShow(context.extensionUri, configService, undefined, () => {
+                refreshAll();
+            });
         }),
 
         // Refresh BSP Explorer
         vscode.commands.registerCommand('bspManager.refreshExplorer', () => {
-            bspExplorerProvider.loadApplications();
+            bspWebviewProvider.loadApplications();
         }),
 
-        // Add profile
-        vscode.commands.registerCommand('bspManager.addProfile', async () => {
-            const profile = await configService.promptNewProfile();
-            if (profile) {
-                profileExplorerProvider.refresh();
-                
-                // If this is the first profile, set it as default
-                if (configService.getProfiles().length === 1) {
-                    await configService.setDefaultProfile(profile.name);
-                    await bspExplorerProvider.loadApplications(profile.name);
-                }
-                
-                updateStatusBar(configService);
-                vscode.window.showInformationMessage(`Profile "${profile.name}" added successfully.`);
-            }
+        // Add profile (opens profile form)
+        vscode.commands.registerCommand('bspManager.addProfile', () => {
+            ProfileFormPanel.createOrShow(context.extensionUri, configService, undefined, () => {
+                refreshAll();
+            });
+        }),
+
+        // Edit profile (opens profile form with existing data)
+        vscode.commands.registerCommand('bspManager.editProfile', (profileName?: string) => {
+            ProfileFormPanel.createOrShow(context.extensionUri, configService, profileName, () => {
+                refreshAll();
+            });
         }),
 
         // Switch profile
@@ -121,18 +239,18 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             await configService.setDefaultProfile(targetProfile);
-            await bspExplorerProvider.loadApplications(targetProfile);
+            await bspWebviewProvider.loadApplications(targetProfile);
             updateStatusBar(configService);
             vscode.window.showInformationMessage(`Switched to profile "${targetProfile}"`);
         }),
 
-        // Filter BSP applications
+        // Filter BSP applications (now just focuses webview)
         vscode.commands.registerCommand('bspManager.filterBsp', () => {
-            filterBspCommand(bspExplorerProvider);
+            vscode.commands.executeCommand('bspExplorer.focus');
         }),
 
         // Delete profile
-        vscode.commands.registerCommand('bspManager.deleteProfile', async () => {
+        vscode.commands.registerCommand('bspManager.deleteProfile', async (profileName?: string) => {
             const profiles = configService.getProfiles();
             
             if (profiles.length === 0) {
@@ -140,56 +258,56 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            const selected = await vscode.window.showQuickPick(
-                profiles.map(p => ({
-                    label: p.name,
-                    description: p.server
-                })),
-                { placeHolder: 'Select profile to delete' }
-            );
+            let targetProfile = profileName;
 
-            if (!selected) {
-                return;
+            if (!targetProfile) {
+                const selected = await vscode.window.showQuickPick(
+                    profiles.map(p => ({
+                        label: p.name,
+                        description: p.server
+                    })),
+                    { placeHolder: 'Select profile to delete' }
+                );
+
+                if (!selected) {
+                    return;
+                }
+                targetProfile = selected.label;
             }
 
             const confirm = await vscode.window.showWarningMessage(
-                `Are you sure you want to delete profile "${selected.label}"?`,
+                `Are you sure you want to delete profile "${targetProfile}"?`,
                 { modal: true },
                 'Delete'
             );
 
             if (confirm === 'Delete') {
-                await configService.deleteProfile(selected.label);
-                profileExplorerProvider.refresh();
+                await configService.deleteProfile(targetProfile);
+                refreshAll();
                 
-                // If deleted profile was default, clear default
-                if (configService.getDefaultProfile() === selected.label) {
-                    const remaining = configService.getProfiles();
-                    if (remaining.length > 0) {
-                        await configService.setDefaultProfile(remaining[0].name);
-                        await bspExplorerProvider.loadApplications(remaining[0].name);
-                    }
+                // If deleted profile was default, switch to another
+                const remaining = configService.getProfiles();
+                if (remaining.length > 0) {
+                    await configService.setDefaultProfile(remaining[0].name);
+                    await bspWebviewProvider.loadApplications(remaining[0].name);
                 }
                 
                 updateStatusBar(configService);
-                vscode.window.showInformationMessage(`Profile "${selected.label}" deleted.`);
+                vscode.window.showInformationMessage(`Profile "${targetProfile}" deleted.`);
             }
         })
     ];
 
     // Add all disposables to subscriptions
     context.subscriptions.push(
-        bspExplorerView,
+        bspWebviewDisposable,
         profileExplorerView,
         statusBarItem,
         ...commands
     );
 
-    // Auto-load BSP applications if default profile is set
-    const defaultProfile = configService.getDefaultProfile();
-    if (defaultProfile) {
-        bspExplorerProvider.loadApplications(defaultProfile);
-    }
+    // DON'T auto-load BSP applications - wait for user to click a profile
+    // The webview will show "Click a profile to load BSP applications"
 }
 
 function updateStatusBar(configService: ConfigService): void {
