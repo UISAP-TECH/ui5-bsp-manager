@@ -94,8 +94,6 @@ export class BspService {
             }
             url += '/content';
 
-            console.log(`Fetching contents: ${url}`);
-
             const response = await this.connection.get(url, {
                 headers: {
                     'Accept': 'application/atom+xml'
@@ -119,8 +117,6 @@ export class BspService {
         const encodedPath = `${appName}%2f${relativePath.replace(/\//g, '%2f')}`;
         const url = `/sap/bc/adt/filestore/ui5-bsp/objects/${encodedPath}/content`;
         
-        console.log(`Downloading: ${url}`);
-        
         const response = await this.connection.getRaw(url);
         return response;
     }
@@ -143,8 +139,6 @@ export class BspService {
         
         // Get root contents (files and folders directly in the app)
         const rootContents = await this.getContents(appName, '');
-        
-        console.log(`Root contents for ${appName}:`, JSON.stringify(rootContents, null, 2));
         
         // Download all files recursively
         const filesDownloaded = await this.downloadRecursively(
@@ -179,8 +173,6 @@ export class BspService {
             // Build local path
             const localPath = path.join(localBaseDir, item.name);
 
-            console.log(`Processing: ${item.name} (${item.type}) - relativePath: ${itemRelativePath}`);
-
             if (item.type === 'folder') {
                 // Create local folder
                 if (!fs.existsSync(localPath)) {
@@ -190,8 +182,6 @@ export class BspService {
                 // Get folder contents from SAP
                 progress.report({ message: `Scanning: ${item.name}/` });
                 const folderContents = await this.getContents(appName, itemRelativePath);
-                
-                console.log(`Folder ${itemRelativePath} contents:`, JSON.stringify(folderContents, null, 2));
                 
                 // Recursively download folder contents
                 const subCount = await this.downloadRecursively(
@@ -210,7 +200,6 @@ export class BspService {
                     const content = await this.downloadFile(appName, itemRelativePath);
                     fs.writeFileSync(localPath, content);
                     count++;
-                    console.log(`Downloaded: ${itemRelativePath}`);
                 } catch (error) {
                     console.error(`Error downloading ${itemRelativePath}:`, error);
                 }
@@ -330,7 +319,6 @@ export class BspService {
             });
         }
 
-        console.log('Parsed contents:', JSON.stringify(files, null, 2));
         return files;
     }
 }

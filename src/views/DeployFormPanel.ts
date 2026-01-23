@@ -529,6 +529,9 @@ export class DeployFormPanel {
         .form-group.has-error .select-trigger {
             border-color: #f44336 !important;
         }
+        .form-group.has-error input {
+            border-color: #f44336 !important;
+        }
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-5px); }
@@ -660,11 +663,12 @@ export class DeployFormPanel {
                 <!-- Update Mode UI -->
                 <div id="updateAppUI" style="display:none;">
                     <div class="form-group">
-                        <label>Existing Application Name</label>
+                        <label>Existing Application Name <span style="color: #f44336;">*</span></label>
                         <div class="pkg-input-group">
                             <input type="text" id="existingAppName" placeholder="ZMY_APP" style="text-transform:uppercase; font-weight:bold; letter-spacing:1px;">
                             <button class="btn btn-secondary" id="btnCheckApp">Check</button>
                         </div>
+                        <div class="error-message" id="existingAppError">Existing Application Name is required</div>
                         <div id="checkStatus" class="status-box"></div>
                     </div>
                     
@@ -678,17 +682,19 @@ export class DeployFormPanel {
                 <!-- New Mode UI -->
                 <div id="newAppUI">
                     <div class="form-group">
-                        <label>Application Name <span class="sub-label">(Max 15 chars)</span></label>
+                        <label>Application Name <span style="color: #f44336;">*</span> <span class="sub-label">(Max 15 chars, must start with Z)</span></label>
                         <input type="text" id="newAppName" maxlength="15" placeholder="ZMY_APP" style="text-transform:uppercase; font-weight:bold; letter-spacing:1px;">
+                        <div class="error-message" id="newAppNameError">Application Name is required</div>
                     </div>
 
                     <div class="form-group">
-                        <label>Description</label>
+                        <label>Description <span style="color: #f44336;">*</span></label>
                         <input type="text" id="newAppDesc" placeholder="e.g., HR Dashboard App">
+                        <div class="error-message" id="newAppDescError">Description is required</div>
                     </div>
                     
                     <div class="form-group">
-                        <label>ABAP Package</label>
+                        <label>ABAP Package <span style="color: #f44336;">*</span></label>
                         <div class="package-combobox" id="pkgCombobox">
                             <input type="text" id="newAppPkg" placeholder="Search or select package..." autocomplete="off" style="text-transform:uppercase;">
                             <div class="pkg-dropdown" id="pkgDropdown">
@@ -696,6 +702,7 @@ export class DeployFormPanel {
                             </div>
                             
                         </div>
+                        <div class="error-message" id="newAppPkgError">ABAP Package is required</div>
                         <div style="font-size:10px; opacity:0.6; margin-top:4px;">Use $TMP for Local Objects (No transport needed).</div>
                     </div>
                 </div>
@@ -897,13 +904,63 @@ export class DeployFormPanel {
                 }
             }
             if (step === 2) {
+                let hasError = false;
+                
                 if (wizardData.mode === 'new') {
-                    if (!document.getElementById('newAppName').value) { alert('Application Name is required'); return false; }
-                    if (!document.getElementById('newAppPkg').value) { alert('Package is required'); return false; }
+                    // Application Name
+                    const appNameVal = document.getElementById('newAppName').value.toUpperCase();
+                    if (!appNameVal) {
+                        const errorEl = document.getElementById('newAppNameError');
+                        errorEl.innerText = 'Application Name is required';
+                        const formGroup = errorEl.closest('.form-group');
+                        errorEl.classList.add('visible');
+                        if (formGroup) formGroup.classList.add('has-error');
+                        hasError = true;
+                    } else if (!appNameVal.startsWith('Z')) {
+                        const errorEl = document.getElementById('newAppNameError');
+                        errorEl.innerText = 'Application Name must start with Z';
+                        const formGroup = errorEl.closest('.form-group');
+                        errorEl.classList.add('visible');
+                        if (formGroup) formGroup.classList.add('has-error');
+                        hasError = true;
+                    }
+                    // Description
+                    if (!document.getElementById('newAppDesc').value) {
+                        const errorEl = document.getElementById('newAppDescError');
+                        const formGroup = errorEl.closest('.form-group');
+                        errorEl.classList.add('visible');
+                        if (formGroup) formGroup.classList.add('has-error');
+                        hasError = true;
+                    }
+                    // Package - must be from the list
+                    const pkgVal = document.getElementById('newAppPkg').value.toUpperCase();
+                    if (!pkgVal) {
+                        const errorEl = document.getElementById('newAppPkgError');
+                        errorEl.innerText = 'ABAP Package is required';
+                        const formGroup = errorEl.closest('.form-group');
+                        errorEl.classList.add('visible');
+                        if (formGroup) formGroup.classList.add('has-error');
+                        hasError = true;
+                    } else if (!allPackages.some(p => p.label === pkgVal)) {
+                        const errorEl = document.getElementById('newAppPkgError');
+                        errorEl.innerText = 'Please select a valid package from the list';
+                        const formGroup = errorEl.closest('.form-group');
+                        errorEl.classList.add('visible');
+                        if (formGroup) formGroup.classList.add('has-error');
+                        hasError = true;
+                    }
                 } else {
-                    if (!document.getElementById('existingAppName').value) { alert('Please enter the Existing Application Name'); return false; }
-                    // Should we force check? Maybe not, but good practice.
+                    // Update mode - Existing Application Name
+                    if (!document.getElementById('existingAppName').value) {
+                        const errorEl = document.getElementById('existingAppError');
+                        const formGroup = errorEl.closest('.form-group');
+                        errorEl.classList.add('visible');
+                        if (formGroup) formGroup.classList.add('has-error');
+                        hasError = true;
+                    }
                 }
+                
+                if (hasError) return false;
             }
             return true;
         }
@@ -951,10 +1008,29 @@ export class DeployFormPanel {
                 
                 customSelect.classList.remove('open');
                 
+                // Clear error when selection is made
+                clearError('profileError');
+                
                 // Check Version
                 checkVer(item.dataset.value);
             });
         });
+
+        // Helper function to clear error
+        function clearError(errorId) {
+            const errorEl = document.getElementById(errorId);
+            if (errorEl) {
+                errorEl.classList.remove('visible');
+                const formGroup = errorEl.closest('.form-group');
+                if (formGroup) formGroup.classList.remove('has-error');
+            }
+        }
+
+        // Clear errors on input for Step 2 fields
+        document.getElementById('newAppName').addEventListener('input', () => clearError('newAppNameError'));
+        document.getElementById('newAppDesc').addEventListener('input', () => clearError('newAppDescError'));
+        document.getElementById('newAppPkg').addEventListener('input', () => clearError('newAppPkgError'));
+        document.getElementById('existingAppName').addEventListener('input', () => clearError('existingAppError'));
 
         function selectMode(mode) {
             document.querySelectorAll('.mode-card').forEach(el => el.classList.remove('selected'));

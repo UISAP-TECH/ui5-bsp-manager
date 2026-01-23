@@ -225,11 +225,6 @@ export class DeployService {
             // Sending empty string as body because some servers dislike null with Content-Type
             const response = await connection.post(url, '', config);
             
-            // DEBUG: Log raw response
-            console.log('=== RAW RESPONSE ===');
-            console.log(typeof response);
-            console.log(response);
-            
             const { XMLParser } = require('fast-xml-parser');
             const parser = new XMLParser({ 
                 ignoreAttributes: false, 
@@ -238,22 +233,12 @@ export class DeployService {
             });
             const parsed = parser.parse(response);
             
-            // DEBUG: Log parsed structure
-            console.log('=== PARSED XML ===');
-            console.log(JSON.stringify(parsed, null, 2));
-
-            // Navigation depending on ADT version: 
-            // usually: asx:abap -> asx:values -> DATA -> TREE_CONTENT -> SEU_ADT_REPOSITORY_OBJ_NODE
-            // With removeNSPrefix: abap -> values -> DATA -> TREE_CONTENT -> SEU_ADT_REPOSITORY_OBJ_NODE
             const abap = parsed.abap;
             const values = abap ? abap.values : null;
             const data = values ? values.DATA : null;
             const content = data ? data.TREE_CONTENT : null;
             const nodes = content ? content.SEU_ADT_REPOSITORY_OBJ_NODE : [];
             const nodeList = Array.isArray(nodes) ? nodes : (nodes ? [nodes] : []);
-
-            console.log('=== NODES ===');
-            console.log('Total nodes:', nodeList.length);
 
             // Extract ONLY Packages (DEVC/K type) that start with Z
             const packages: any[] = [];
@@ -285,7 +270,6 @@ export class DeployService {
                 }
             }
             
-            console.log('=== FILTERED PACKAGES (Z* + $TMP) ===', packages.length);
             return packages;
 
         } catch (error: any) {
