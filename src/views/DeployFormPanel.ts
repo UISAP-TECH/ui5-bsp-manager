@@ -97,6 +97,45 @@ export class DeployFormPanel {
                 this._panel.webview.postMessage({ command: 'setTransportRequests', requests: trs });
                 break;
 
+            case 'checkTransport':
+                try {
+                    const trResult = await this.deployService.checkTransportRequired(
+                        message.profile,
+                        message.package,
+                        message.bspName
+                    );
+                    this._panel.webview.postMessage({ 
+                        command: 'transportCheckResult', 
+                        required: trResult.required,
+                        requests: trResult.availableRequests
+                    });
+                } catch (e) {
+                    // Fallback to just getting requests
+                    const fallbackTrs = await this.deployService.getTransportRequests(message.profile);
+                    this._panel.webview.postMessage({ 
+                        command: 'transportCheckResult', 
+                        required: true,
+                        requests: fallbackTrs.map((r: any) => ({ trId: r.trId, description: r.description }))
+                    });
+                }
+                break;
+
+            case 'createTransport':
+                try {
+                    const newTrId = await this.deployService.createTransportRequest(
+                        message.profile, 
+                        message.description,
+                        message.package,
+                        message.bspName
+                    );
+                    this._panel.webview.postMessage({ command: 'createTransportResult', success: true, trId: newTrId, description: message.description });
+                    vscode.window.showInformationMessage(`Transport Request ${newTrId} created successfully!`);
+                } catch (e: any) {
+                    this._panel.webview.postMessage({ command: 'createTransportResult', success: false, message: String(e.message || e) });
+                    vscode.window.showErrorMessage(`Failed to create Transport Request: ${e.message || e}`);
+                }
+                break;
+
             case 'deploy':
                  // Final Deploy Step
                  const folderUri = await vscode.window.showOpenDialog({
@@ -115,26 +154,41 @@ export class DeployFormPanel {
 
                  vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
-                    title: `Deploying ${message.data.bspName}...`,
+                    title: `Deploying ${message.data.appName}...`,
                     cancellable: false
                 }, async (progress) => {
                     try {
+                        let transportId = message.data.transport;
+                        
+                        // Logic: If 'create' mode was selected, we need to create TR first
+                        if (message.data.trOption === 'create') {
+                            vscode.window.showInformationMessage(`Creating Transport Request: ${message.data.trDescription}...`);
+                            debugger;
+                            transportId = await this.deployService.createTransportRequest(
+                                message.data.profile, 
+                                message.data.trDescription,
+                                message.data.package,
+                                message.data.appName
+                            );
+                            vscode.window.showInformationMessage(`Created Transport Request: ${transportId}`);
+                        }
+                        debugger;
                         await this.deployService.deploy(
                             message.data.profile, 
                             {
-                                bspName: message.data.bspName,
+                                bspName: message.data.appName,
                                 package: message.data.package,
                                 description: message.data.description,
-                                transport: message.data.transport,
+                                transport: transportId, // Use the potentially new transportId
                                 sourceDir: sourceDir
                             }, 
                             progress
                         );
-                        vscode.window.showInformationMessage(`Successfully deployed ${message.data.bspName}!`);
+                        vscode.window.showInformationMessage(`Successfully deployed ${message.data.appName}!`);
                         this._panel.webview.postMessage({ command: 'deployFinished', success: true });
-                    } catch (error) {
-                        vscode.window.showErrorMessage(`Deployment failed: ${error}`);
-                        this._panel.webview.postMessage({ command: 'deployFinished', success: false, message: String(error) });
+                    } catch (error: any) {
+                        vscode.window.showErrorMessage(`Deployment failed: ${error.message || error}`);
+                        this._panel.webview.postMessage({ command: 'deployFinished', success: false, message: String(error.message || error) });
                     }
                 });
                 break;
@@ -514,6 +568,47 @@ export class DeployFormPanel {
         .pkg-item.selected { background: rgba(0, 122, 204, 0.2); }
         .pkg-loading { padding: 15px; text-align: center; opacity: 0.7; }
 
+        /* Transport Request Radio Items */
+        .tr-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: rgba(0,0,0,0.1);
+        }
+        .tr-item:hover {
+            border-color: var(--primary);
+            background: rgba(0, 122, 204, 0.05);
+        }
+        .tr-item.selected {
+            border-color: var(--primary);
+            background: rgba(0, 122, 204, 0.1);
+            box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+        }
+        .tr-item input[type="radio"] {
+            margin-right: 12px;
+            accent-color: var(--primary);
+        }
+        .tr-id {
+            font-weight: 600;
+            font-family: monospace;
+            font-size: 13px;
+            margin-right: 10px;
+            color: var(--primary);
+        }
+        .tr-desc {
+            font-size: 13px;
+            opacity: 0.8;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         /* Error Message */
         .error-message {
             display: none;
@@ -538,8 +633,119 @@ export class DeployFormPanel {
             75% { transform: translateX(5px); }
         }
 
-    </style>
-    <style>
+        /* Spinner */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-left-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px auto;
+        }
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+
+        </style>
+        <style>
+        /* TR Mode Buttons - Legacy (can be removed if unused, but keeping simple) */
+        
+        /* TR Options - Card Style */
+        .tr-option-group {
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+            background: rgba(255,255,255,0.02);
+            padding: 15px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            position: relative;
+            cursor: pointer;
+        }
+        .tr-option-group:hover {
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(255,255,255,0.2);
+        }
+        .tr-option-group.selected {
+            border-color: var(--primary);
+            background: rgba(0, 122, 204, 0.05); /* very subtle blue tint */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .tr-option-group.selected::before { /* Left accent line */
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+            background: var(--primary); border-radius: 8px 0 0 8px;
+        }
+
+        .group-header {
+            margin-bottom: 12px;
+        }
+        .option-label {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-color);
+        }
+        .group-hint {
+            font-size: 11px; opacity: 0.6; margin-top: 2px;
+        }
+        
+        .option-content {
+            transition: opacity 0.2s;
+            opacity: 0.7; /* Dim by default */
+            pointer-events: none; /* Prevent interaction when not selected */
+        }
+        .tr-option-group.selected .option-content {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Table Styles for TR List */
+        .tr-table {
+            border: 1px solid var(--border-color);
+            background: rgba(0,0,0,0.2);
+            border-radius: 4px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .tr-table-header {
+            display: flex;
+            background: var(--card-bg); /* Opaque background to hide scrolling content */
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 10px;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: bold;
+            opacity: 0.9; /* Slightly less opaque text/border but background is solid */
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .tr-table-row {
+            display: flex;
+            padding: 10px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px;
+            cursor: pointer;
+            align-items: center;
+            transition: background 0.1s;
+        }
+        .tr-table-row:hover {
+            background-color: rgba(255,255,255,0.05);
+        }
+        .tr-table-row.selected {
+            background-color: rgba(0, 120, 212, 0.25); /* Stronger blue */
+            border-left: 3px solid var(--primary);
+        }
+        /* Columns */
+        .tr-col-id { width: 140px; font-weight:600; font-family: 'Consolas', monospace; color: var(--primary-light); }
+        .tr-col-user { width: 100px; opacity:0.7; font-size:12px; }
+        .tr-col-desc { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight:500; }
+        .tr-status-icon { width: 20px; text-align:right; opacity:0; font-weight:bold; color: var(--primary); }
+        .tr-table-row.selected .tr-status-icon::after { content: '✓'; opacity: 1; }
+        
+        /* Remove Old inputs */
+        input[type="radio"] { display: none; }
+
+        
         /* Modal Styles */
         .modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -710,27 +916,93 @@ export class DeployFormPanel {
 
             <!-- STEP 3: Transport -->
             <div class="step-content" id="step-3">
-                <h2>Transport Request</h2>
+                <h2>Select a Transport Request</h2>
+                <div style="font-size:13px; opacity:0.7; margin-bottom:20px;">Provide a transport for the application</div>
                 
-                <div id="trSection">
-                    <div class="form-group">
-                        <label>Select Transport Request</label>
-                        <select id="trSelect">
-                            <option value="">Fetching...</option>
-                        </select>
-                    </div>
-                    
-                    <div style="text-align:center; margin: 10px 0; opacity:0.5; font-size:12px;">— OR —</div>
-
-                    <div class="form-group">
-                        <label>Enter Manually</label>
-                        <input type="text" id="manualTr" placeholder="DEVK900000">
-                    </div>
+                <!-- Loading indicator -->
+                <div id="trLoading" style="text-align:center; padding:60px 20px;">
+                    <div class="spinner"></div>
+                    <div style="opacity:0.7;">Checking transport requirements...</div>
                 </div>
                 
+                <!-- TR Section (shown after transport check) -->
+                <div id="trSection" style="display:none;">
+                    
+                    <!-- OPTION 1: Choose from requests -->
+                    <div class="tr-option-group" id="group-list" onclick="selectTrOption('list')">
+                        <input type="radio" name="trOption" value="list" id="radioList" style="display:none;">
+                        <div class="group-header">
+                            <div class="option-label">Choose from existing requests</div>
+                            <div class="group-hint">Select a request from your history</div>
+                        </div>
+                        
+                        <div id="trOptionListContent" class="option-content">
+                            <div class="form-group" style="padding:0;">
+                                <input type="text" id="trFilter" placeholder="Filter requests..." oninput="filterTrList(this.value)" style="width:100%; margin-bottom:5px; padding:8px; border-radius:4px; border:1px solid var(--border-color); background:rgba(0,0,0,0.2); color:var(--text-color);">
+                                <div class="error-message" id="trSelectError" style="margin-bottom:10px; margin-top:0;">Please select a request from the list</div>
+
+                                <div class="tr-table">
+                                    <div class="tr-table-header">
+                                        <div class="tr-col-id">Request</div>
+                                        <div class="tr-col-user">User</div>
+                                        <div class="tr-col-desc">Description</div>
+                                    </div>
+                                    <div id="trList" class="tr-table-body">
+                                        <!-- Rows injected by JS -->
+                                    </div>
+                                    <div id="noTrWarning" style="padding:40px; text-align:center; display:none; opacity:0.6;">
+                                        No open transport requests found.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:20px;">
+                        <!-- OPTION 2: Create a new request -->
+                        <div class="tr-option-group" id="group-create" style="flex:1;" onclick="selectTrOption('create')">
+                            <input type="radio" name="trOption" value="create" id="radioCreate" style="display:none;">
+                             <div class="group-header">
+                                <div class="option-label">Create New Request</div>
+                            </div>
+                            
+                            <div id="trOptionCreateContent" class="option-content">
+                                <div class="form-group" style="padding:0;">
+                                    <input type="text" id="newTrDesc" placeholder="Enter description for new request..." style="width:100%; margin-bottom:5px; padding:10px; border-radius:4px; border:1px solid var(--border-color); background:rgba(0,0,0,0.2); color:var(--text-color);">
+                                    <div class="error-message" id="newTrDescError">Description is required</div>
+                                    
+                                    <div style="font-size:11px; opacity:0.5; margin-top:5px;">
+                                        Generated automatically on deploy.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- OPTION 3: Enter a request number -->
+                        <div class="tr-option-group" id="group-manual" style="flex:1;" onclick="selectTrOption('manual')">
+                             <input type="radio" name="trOption" value="manual" id="radioManual" style="display:none;">
+                             <div class="group-header">
+                                <div class="option-label">Manual Entry</div>
+                            </div>
+                            
+                            <div id="trOptionManualContent" class="option-content">
+                                <div class="form-group" style="padding:0;">
+                                    <input type="text" id="manualTr" placeholder="DEVK900..." style="text-transform:uppercase; width:100%; padding:10px; border-radius:4px; border:1px solid var(--border-color); background:rgba(0,0,0,0.2); color:var(--text-color);">
+                                    <div style="font-size:11px; opacity:0.5; margin-top:5px;">
+                                        Enter existing Request ID directly.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+                
+                <!-- Local Object Message -->
                 <div class="status-box status-success" id="localObjMsg" style="display:none; text-align:center; justify-content:center;">
                     ✓ Local Object ($TMP) selected. No Transport Request required.
                 </div>
+
             </div>
 
             <!-- STEP 4: Confirmation -->
@@ -793,7 +1065,9 @@ export class DeployFormPanel {
             appName: '',
             description: '',
             package: '',
-            transport: ''
+            transport: '',
+            trOption: '',
+            trDescription: ''
         };
         let availableTrs = [];
 
@@ -840,41 +1114,58 @@ export class DeployFormPanel {
                     wizardData.appName = document.getElementById('existingAppName').value.toUpperCase();
                 }
 
-                // Prepare Step 3 (Transport)
+                // Check if $TMP - skip Step 3 entirely
                 if (wizardData.package === '$TMP') {
-                    document.getElementById('trSection').style.display = 'none';
-                    document.getElementById('localObjMsg').style.display = 'flex';
                     wizardData.transport = '';
-                } else {
-                    document.getElementById('trSection').style.display = 'block';
-                    document.getElementById('localObjMsg').style.display = 'none';
-                    
-                    // Fetch TRs if not already fetched
-                    if (availableTrs.length === 0) {
-                        vscode.postMessage({ command: 'getTransportRequests', profile: wizardData.profile });
-                    }
+                    // Go directly to Step 4 (Summary)
+                    prepareSummary();
+                    showStep(4);
+                    return;
                 }
+                
+                // Show loading and request transport check
+                document.getElementById('trLoading').style.display = 'block';
+                document.getElementById('trSection').style.display = 'none';
+                document.getElementById('noTrWarning').style.display = 'none';
+                document.getElementById('localObjMsg').style.display = 'none';
+                
+                // Request transport check from backend
+                vscode.postMessage({ 
+                    command: 'checkTransport', 
+                    profile: wizardData.profile,
+                    package: wizardData.package,
+                    bspName: wizardData.appName
+                });
             }
             
             if (currentStep === 3) {
-                // Capture TR
-                const manual = document.getElementById('manualTr').value;
-                const selected = document.getElementById('trSelect').value;
-                wizardData.transport = manual || selected;
+                // Capture TR based on active option
+                const trOption = document.querySelector('input[name="trOption"]:checked').value;
+                wizardData.trOption = trOption; // Store mode for summary/deploy
+
+                let finalTr = '';
+                
+                if (trOption === 'manual') {
+                     finalTr = document.getElementById('manualTr').value.toUpperCase();
+                } else if (trOption === 'list') {
+                     // Get selected row from list instead of radio
+                     const selectedRow = document.querySelector('.tr-table-row.selected');
+                     finalTr = selectedRow ? selectedRow.dataset.id : '';
+                     
+                     // Capture Description for Summary
+                     if(selectedRow) {
+                         const descEl = selectedRow.querySelector('.tr-col-desc');
+                         if(descEl) wizardData.trDescription = descEl.innerText;
+                     }
+                } else if (trOption === 'create') {
+                     finalTr = 'will_create';
+                     wizardData.trDescription = document.getElementById('newTrDesc').value;
+                }
+                
+                wizardData.transport = finalTr;
                 
                 // Prepare Step 4 (Summary)
-                document.getElementById('sumProfile').innerText = wizardData.profile;
-                document.getElementById('sumMode').innerText = wizardData.mode === 'new' ? 'New Application' : 'Update Existing';
-                document.getElementById('sumApp').innerText = wizardData.appName;
-                document.getElementById('sumPkg').innerText = wizardData.package;
-                
-                if (wizardData.package === '$TMP') {
-                    document.getElementById('sumTr').innerText = 'Local Object ($TMP)';
-                    document.getElementById('sumTr').style.opacity = '0.7';
-                } else {
-                    document.getElementById('sumTr').innerText = wizardData.transport || 'Not Selected!';
-                    if(!wizardData.transport) document.getElementById('sumTr').style.color = '#f44336';
-                }
+                prepareSummary();
             }
 
             if (currentStep === 4) {
@@ -883,6 +1174,36 @@ export class DeployFormPanel {
             }
 
             showStep(currentStep + 1);
+        }
+        
+        function prepareSummary() {
+            document.getElementById('sumProfile').innerText = wizardData.profile;
+            document.getElementById('sumMode').innerText = wizardData.mode === 'new' ? 'New Application' : 'Update Existing';
+            document.getElementById('sumApp').innerText = wizardData.appName;
+            document.getElementById('sumPkg').innerText = wizardData.package;
+            
+            if (wizardData.package === '$TMP') {
+                document.getElementById('sumTr').innerText = 'Local Object ($TMP)';
+                document.getElementById('sumTr').style.opacity = '0.7';
+                document.getElementById('sumTr').style.color = '';
+            } else {
+                if (wizardData.transport === 'will_create') {
+                    document.getElementById('sumTr').innerText = \`New Request (\${wizardData.trDescription})\`;
+                    document.getElementById('sumTr').style.opacity = '1';
+                    document.getElementById('sumTr').style.color = '#2196F3'; // Info blue
+                } else {
+
+                    const descText = wizardData.trDescription ? ' (' + wizardData.trDescription + ')' : '';
+                    document.getElementById('sumTr').innerText = (wizardData.transport || 'Not Selected!') + descText;
+                    
+                    document.getElementById('sumTr').style.opacity = '1';
+                    if (!wizardData.transport) {
+                        document.getElementById('sumTr').style.color = '#f44336';
+                    } else {
+                        document.getElementById('sumTr').style.color = '';
+                    }
+                }
+            }
         }
 
         function goBack() {
@@ -962,6 +1283,69 @@ export class DeployFormPanel {
                 
                 if (hasError) return false;
             }
+            
+            // Step 3: Transport Request validation
+            if (step === 3) {
+                // Skip validation if $TMP (shouldn't reach here, but safety)
+                if (wizardData.package === '$TMP') return true;
+                
+                const trOption = document.querySelector('input[name="trOption"]:checked').value;
+                
+                if (trOption === 'manual') {
+                    const manual = document.getElementById('manualTr').value.trim();
+                    if (!manual) {
+                         // Show inline error for manual input
+                         // We need an error element for manualTr if not exists, 
+                         // or reuse trSelectError but positioning might be off.
+                         // Let's assume we can add one or reuse general error.
+                         // Actually, let's use trSelectError but update text
+                         const err = document.getElementById('trSelectError');
+                         err.innerText = "Please enter a Request Number";
+                         err.style.marginTop = "5px"; 
+                         // Ensure it's visible in the right place? 
+                         // Since options are toggled, trSelectError is inside Option 1 usually.
+                         // We should probably add specific error divs for each option in HTML if we want perfect placement,
+                         // OR move trSelectError outside or duplicate it.
+                         // Given previous HTML structure, let's look at option 3 HTML.
+                         
+                         // Option 3 HTML (Manual) didn't have specific error div in previous chunk.
+                         // Let's add one dynamically if missing or relies on generic.
+                         
+                         // Better approach for now: Use the generic visual validation 
+                         // and perhaps a specific error div if we can edit HTML too.
+                         // But for this chunk, let's try to find an error div near manualTr.
+                         
+                         let manualErr = document.getElementById('manualTrError');
+                         if(!manualErr) {
+                             // Create if not exists (hacky but works without HTML edit)
+                             manualErr = document.createElement('div');
+                             manualErr.id = 'manualTrError';
+                             manualErr.className = 'error-message';
+                             manualErr.innerText = 'Request Number is required';
+                             document.getElementById('manualTr').parentNode.appendChild(manualErr);
+                         }
+                         manualErr.classList.add('visible');
+                         return false;
+                    }
+                } else if (trOption === 'create') {
+                     const desc = document.getElementById('newTrDesc').value.trim();
+                     if(!desc) {
+                         const err = document.getElementById('newTrDescError');
+                         err.classList.add('visible');
+                         return false;
+                     }
+                } else {
+                    // List mode logic (class based)
+                    const selectedRow = document.querySelector('.tr-table-row.selected');
+                    if (!selectedRow) {
+                         const err = document.getElementById('trSelectError');
+                         err.innerText = "Please select a request from the list";
+                         err.classList.add('visible');
+                         return false;
+                    }
+                }
+            }
+            
             return true;
         }
 
@@ -1031,6 +1415,91 @@ export class DeployFormPanel {
         document.getElementById('newAppDesc').addEventListener('input', () => clearError('newAppDescError'));
         document.getElementById('newAppPkg').addEventListener('input', () => clearError('newAppPkgError'));
         document.getElementById('existingAppName').addEventListener('input', () => clearError('existingAppError'));
+        
+        // Clear errors on input for Step 3 manual TR field
+        // Clear errors on input for Step 3 manual TR field
+        document.getElementById('manualTr').addEventListener('input', () => {
+             const err = document.getElementById('manualTrError');
+             if(err) err.classList.remove('visible');
+             // Also clear generic if used
+             clearError('trSelectError'); 
+        });
+
+        // TR item selection handler (for visual feedback in table)
+        function selectTrRow(el) {
+            // Check if already selected
+            const isSelected = el.classList.contains('selected');
+            
+            // Clear all
+            document.querySelectorAll('.tr-table-row').forEach(item => item.classList.remove('selected'));
+            
+            // Toggle
+            if (!isSelected) {
+                el.classList.add('selected');
+                // Select list option automatically if a row is clicked
+                selectTrOption('list');
+            } else {
+                // Deselecting - no op or maybe clear selection?
+                // User said "geri kaldırmak isteyince kaldırıramıyorum"
+                // So now we start with cleared state.
+            }
+        }
+        
+        // TR Option Switching (Main Cards)
+        function selectTrOption(option) {
+            // Update invisible radio checked state
+            const radio = document.querySelector(\`input[name="trOption"][value="\${option}"]\`);
+            if(radio) radio.checked = true;
+
+            // Highlight selected group, unhighlight others
+            document.querySelectorAll('.tr-option-group').forEach(el => el.classList.remove('selected'));
+            
+            const group = document.getElementById('group-' + option);
+            if(group) group.classList.add('selected');
+            
+            // Visual feedback focus
+            if(option === 'list') {
+                 // maybe focus filter?
+            } else if(option === 'create') {
+                document.getElementById('newTrDesc').focus();
+            } else if (option === 'manual') {
+                document.getElementById('manualTr').focus();
+            }
+        }
+        
+        // Filter TR List
+        function filterTrList(val) {
+            const filter = val.toUpperCase();
+            const rows = document.querySelectorAll('.tr-table-row');
+            rows.forEach(row => {
+                const text = row.innerText.toUpperCase();
+                row.style.display = text.includes(filter) ? 'flex' : 'none';
+            });
+        }
+        
+        // Create TR Action
+        function createTr() {
+            const desc = document.getElementById('newTrDesc').value;
+            if (!desc) {
+                const err = document.getElementById('newTrDescError');
+                err.classList.add('visible');
+                return;
+            }
+            
+            const btn = document.getElementById('btnDoCreate');
+            btn.innerText = 'Creating...';
+            btn.disabled = true;
+            
+            vscode.postMessage({ 
+                command: 'createTransport', 
+                profile: wizardData.profile,
+                description: desc,
+                package: wizardData.package,
+                bspName: wizardData.bspName || (wizardData.mode === 'new' ? document.getElementById('newAppName').value : document.getElementById('existingAppName').value)
+            });
+        }
+        
+        document.getElementById('newTrDesc').addEventListener('input', () => clearError('newTrDescError'));
 
         function selectMode(mode) {
             document.querySelectorAll('.mode-card').forEach(el => el.classList.remove('selected'));
@@ -1154,16 +1623,90 @@ export class DeployFormPanel {
                     break;
 
                 case 'setTransportRequests':
-                    const trSel = document.getElementById('trSelect');
-                    trSel.innerHTML = '<option value="">-- Select Transport --</option>';
+                    // Legacy handler - kept for backwards compatibility
                     availableTrs = msg.requests || [];
-                    availableTrs.forEach(tr => {
-                        const opt = document.createElement('option');
-                        opt.value = tr.trId;
-                        opt.innerText = \`\${tr.trId} - \${tr.description}\`;
-                        trSel.appendChild(opt);
-                    });
-                    if (wizardData.transport) trSel.value = wizardData.transport;
+                    break;
+                    
+                case 'transportCheckResult':
+                    // Hide loading
+                    document.getElementById('trLoading').style.display = 'none';
+                    
+                    // If TR not required (rare case), skip to Step 4
+                    if (!msg.required) {
+                        wizardData.transport = '';
+                        prepareSummary();
+                        showStep(4);
+                        return;
+                    }
+                    
+                    // Store available TRs
+                    availableTrs = msg.requests || [];
+                    
+                    // Show TR section
+                    document.getElementById('trSection').style.display = 'block';
+                    
+                    // Populate TR Table
+                    const trList = document.getElementById('trList');
+                    
+                    if (availableTrs.length === 0) {
+                        // No TRs available
+                        document.getElementById('noTrWarning').style.display = 'block';
+                        trList.innerHTML = '';
+                        // Default to create mode if no list
+                        selectTrOption('create');
+                    } else {
+                        // Show list and populate
+                        document.getElementById('noTrWarning').style.display = 'none';
+                        
+                        trList.innerHTML = availableTrs.map((tr) => \`
+                            <div class="tr-table-row" onclick="selectTrRow(this)" data-id="\${tr.trId}">
+                                <div class="tr-col-id">\${tr.trId}</div>
+                                <div class="tr-col-user">\${tr.owner || '-'}</div>
+                                <div class="tr-col-desc">\${tr.description || ''}</div>
+                                <div class="tr-status-icon"></div>
+                            </div>
+                        \`).join('');
+                        
+                        // Default to list mode
+                        selectTrOption('list');
+                    }
+                    break;
+
+                case 'createTransportResult':
+                    document.getElementById('btnDoCreate').innerText = 'Create & Select';
+                    document.getElementById('btnDoCreate').disabled = false;
+                    
+                    if (msg.success) {
+                        // Add new TR to list (at top)
+                        const newTr = { trId: msg.trId, description: msg.description, owner: 'YOU' };
+                        availableTrs.unshift(newTr);
+                        
+                        // Re-render list
+                        const trList = document.getElementById('trList');
+                        
+                        // Remove warning if it was there
+                        document.getElementById('noTrWarning').style.display = 'none';
+                        
+                        trList.innerHTML = availableTrs.map((tr) => \`
+                            <label class="tr-table-row \${tr.trId === msg.trId ? 'selected' : ''}" onclick="selectTrRow(this)">
+                                <div class="tr-col-radio"><input type="radio" name="selectedTr" value="\${tr.trId}" \${tr.trId === msg.trId ? 'checked' : ''}></div>
+                                <div class="tr-col-id">\${tr.trId}</div>
+                                <div class="tr-col-user">\${tr.owner || '-'}</div>
+                                <div class="tr-col-desc">\${tr.description || ''}</div>
+                            </label>
+                        \`).join('');
+                        
+                        clearError('trSelectError'); // Note: Error might be somewhere else now?
+                        
+                        // Switch to list mode and select it
+                        selectTrOption('list');
+                        
+                    } else {
+                        // Show error
+                        const err = document.getElementById('newTrDescError');
+                        err.innerText = msg.message;
+                        err.classList.add('visible');
+                    }
                     break;
             }
         });

@@ -82,25 +82,34 @@ export class DeployService {
     /**
      * Fetches the SAPUI5 version from the backend system.
      */
+    private findAllByKey(obj: any, key: string): any[] {
+        let results: any[] = [];
+        if (!obj || typeof obj !== 'object') return results;
+
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = obj[key];
+            if (Array.isArray(value)) {
+                results = results.concat(value);
+            } else if (value) {
+                results.push(value);
+            }
+        }
+
+        for (const k in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, k) && typeof obj[k] === 'object') {
+                results = results.concat(this.findAllByKey(obj[k], key));
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Tries to fetch the UI5 version from the backend
+     */
     async getUi5Version(profileName: string): Promise<string> {
         try {
             const profile = this.configService.getProfile(profileName);
             if (!profile) return 'Unknown';
-
-            // We can check /sap/public/bc/ui5_ui5/index.html or similar, or specific ADT service if available.
-            // A common way is to check the cache buster info or a specific file.
-            // For now, let's try to fetch a well-known resource that might contain version info 
-            // OR simpler: just return a placeholder or try to read /sap/bc/ui5_ui5/ui2/ushell/shells/abap/FioriLaunchpad.html if possible?
-            // Actually, we can use the `SapConnection` to just fetch the root discovery which might have system info, 
-            // but for UI5 version specifically, it's often in /sap/public/bc/ui5_ui5/resources/sap-ui-version.json
-            
-            // We need a temporary connection for this profile if not already active?
-            // DeployService usually gets passed an active BspService which has a connection.
-            // But BspService is tied to the *explorer* profile. 
-            // The wizard allows picking a profile. So we might need to create a connection on the fly.
-            
-            // Let's create a temporary connection helper in DeployService or ConfigService?
-            // For simplicity, let's assume we use the profile credentials to make a quick request.
             
             const { SapConnection } = require('./SapConnection');
             const password = await this.configService.getPassword(profileName);
@@ -126,6 +135,7 @@ export class DeployService {
      */
     async getTransportRequests(profileName: string): Promise<any[]> {
         try {
+            debugger;
             const profile = this.configService.getProfile(profileName);
             if (!profile) return [];
             
@@ -135,48 +145,202 @@ export class DeployService {
             const { SapConnection } = require('./SapConnection');
             const connection = new SapConnection({ ...profile, password });
 
-            // ADT Service for Transport Checks: /sap/bc/adt/cts/transportchecks
-            // Or Discovery: /sap/bc/adt/discovery
-            // We usually need to query for requests.
-            // Use ADT: /sap/bc/adt/cts/transportrequests?user=<user>&requestType=K&status=D (Modifiable)
-            
-            // Note: URL might vary by system version.
             const user = profile.user.toUpperCase();
-             // requestType=W (Customizing), K (Workbench) - usually we need Workbench for BSP
-            const url = `/sap/bc/adt/cts/transportrequests?user=${user}&requestType=K&requestStatus=D`;
+            // status=D (Modifiable), requestType=K (Workbench)
+            const url = `/sap/bc/adt/cts/transportrequests?user=${user}&status=D&requestType=K`;
             
             const response = await connection.get(url, {
-                headers: { 'Accept': 'application/vnd.sap.adt.transportrequests+xml' } 
+                headers: { 'Accept': 'application/vnd.sap.adt.transportorganizertree.v1+xml' } 
             });
 
             // Parse XML response
-            // We need to import XML parser here or use BspService's parser if we made it public.
-            // Let's create a local parser for now.
             const { XMLParser } = require('fast-xml-parser');
             const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
             const parsed = parser.parse(response);
 
-            // Extract requests
+            // Extract requests generically to support both flat list and tree structures
             const requests = [];
-            const collection = parsed['cts:transportRequests'] || parsed.transportRequests;
-            if (collection) {
-                const entries = Array.isArray(collection['cts:transportRequest']) 
-                    ? collection['cts:transportRequest'] 
-                    : [collection['cts:transportRequest']].filter(Boolean);
-
-                for (const entry of entries) {
-                    requests.push({
-                        trId: entry['@_number'] || entry.number,
-                        description: entry['@_description'] || entry.description,
-                        owner: entry['@_owner'] || entry.owner
-                    });
-                }
+            const rawEntries = this.findAllByKey(parsed, 'cts:transportRequest');
+            
+            for (const entry of rawEntries) {
+                requests.push({
+                    trId: entry['@_cts:id'] || entry['@_id'] || entry['@_number'] || entry.number,
+                    description: entry['cts:description'] || entry['@_description'] || entry.description || '',
+                    owner: entry['@_cts:owner'] || entry['@_owner'] || entry.owner
+                });
             }
+
             return requests;
 
         } catch (error) {
             console.error('Failed to get transport requests:', error);
             return []; // Return empty if failed
+        }
+    }
+
+    /**
+     * Creates a new Workbench Transport Request
+     */
+    async createTransportRequest(profileName: string, description: string, packageName: string, bspName: string): Promise<string> {
+        const profile = this.configService.getProfile(profileName);
+        if (!profile) throw new Error("Profile not found");
+        
+        const password = await this.configService.getPassword(profileName);
+        if (!password) throw new Error("Password not found");
+
+        const { SapConnection } = require('./SapConnection');
+        const connection = new SapConnection({ ...profile, password });
+
+        const url = '/sap/bc/adt/cts/transports';
+        
+        const body = `<?xml version="1.0" encoding="UTF-8"?><asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><OPERATION>I</OPERATION><DEVCLASS>${packageName}</DEVCLASS><REQUEST_TEXT>${description}</REQUEST_TEXT><REF>/sap/bc/adt/filestore/ui5-bsp/objects/${bspName}/$create</REF></DATA></asx:values></asx:abap>`;
+
+        const headers = {
+            'Content-Type': 'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest', 
+            'Accept': 'text/plain'
+        };
+
+        try {
+            const response = await connection.post(url, body, { headers });
+            debugger;
+            // Parsing response logic (handling text/plain where server returns path)
+            if (typeof response === 'string') {
+                 // Example: /com.sap.cts/object_record/T4DK955259
+                 const parts = response.split('/');
+                 const lastPart = parts[parts.length - 1];
+                 
+                 // If looks like a TR ID, return it
+                 if (lastPart && /[A-Z0-9]{3}K[0-9]{6}/.test(lastPart)) {
+                     return lastPart;
+                 }
+                 
+                 // Try standard regex match
+                 const match = response.match(/[A-Z0-9]{3}K[0-9]{6}/);
+                 if (match) return match[0];
+            }
+            
+            throw new Error(`Could not parse TR number from response: ${response}`);
+
+        } catch (error: any) {
+            console.error('[DeployService] Create Transport Failed:', error);
+            if (error.response) {
+                 console.error('[DeployService] Error Status:', error.response.status);
+                 console.error('[DeployService] Error Data:', error.response.data);
+                 console.error('[DeployService] Error Headers:', error.response.headers);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Pre-creation check: Is Transport Request required?
+     * Also returns user's open transport requests if available.
+     */
+    async checkTransportRequired(
+        profileName: string, 
+        packageName: string, 
+        bspName: string
+    ): Promise<{
+        required: boolean;
+        availableRequests: Array<{ trId: string; description: string }>;
+    }> {
+        try {
+            const profile = this.configService.getProfile(profileName);
+            if (!profile) return { required: true, availableRequests: [] };
+            
+            const password = await this.configService.getPassword(profileName);
+            if (!password) return { required: true, availableRequests: [] };
+
+            const { SapConnection } = require('./SapConnection');
+            const connection = new SapConnection({ ...profile, password });
+
+            const url = '/sap/bc/adt/cts/transportchecks';
+            
+            const body = `<?xml version="1.0" encoding="UTF-8" ?>
+<asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml">
+	<asx:values>
+		<DATA>
+			<PGMID></PGMID>
+			<OBJECT></OBJECT>
+			<OBJECTNAME></OBJECTNAME>
+			<DEVCLASS>${packageName}</DEVCLASS>
+			<OPERATION>I</OPERATION>
+			<URI>/sap/bc/adt/filestore/ui5-bsp/objects/${bspName}/$create</URI>
+		</DATA>
+	</asx:values>
+</asx:abap>`;
+
+            const headers = {
+                'Content-Type': 'application/vnd.sap.as+xml; charset=utf-8; dataname=com.sap.adt.transport.service.checkData',
+                'Accept': 'application/vnd.sap.as+xml; dataname=com.sap.adt.transport.service.checkData'
+            };
+
+            const response = await connection.post(url, body, { headers });
+
+            // Parse response
+            const { XMLParser } = require('fast-xml-parser');
+            const parser = new XMLParser({ 
+                ignoreAttributes: false, 
+                attributeNamePrefix: '@_',
+                removeNSPrefix: true 
+            });
+            const parsed = parser.parse(response);
+
+            // Check if TR is required
+            let required = false;
+            
+            // Basic string check
+            if (typeof response === 'string') {
+                required = response.includes('<REQ_REQUIRED>X</REQ_REQUIRED>') || 
+                           response.includes('LOCKS') ||
+                           !response.includes('<REQ_REQUIRED></REQ_REQUIRED>');
+            }
+
+            // Extract using parsed object
+            const availableRequests: Array<{ trId: string; description: string, owner: string }> = [];
+            
+            try {
+                const abap = parsed.abap || parsed['asx:abap'] || parsed;
+                const values = abap?.values || abap?.['asx:values'];
+                const data = values?.DATA;
+                
+                // Detailed check
+                if (data && data.REQ_REQUIRED === 'X') required = true;
+
+                const requestsNode = data?.REQUESTS;
+                
+                if (requestsNode && requestsNode.CTS_REQUEST) {
+                    const ctsRequests = Array.isArray(requestsNode.CTS_REQUEST) 
+                        ? requestsNode.CTS_REQUEST 
+                        : [requestsNode.CTS_REQUEST];
+
+                    for(const req of ctsRequests) {
+                        const header = req.REQ_HEADER;
+                        if(header && header.TRKORR) {
+                            availableRequests.push({ 
+                                trId: header.TRKORR, 
+                                description: header.AS4TEXT || '',
+                                owner: header.AS4USER || ''
+                            });
+                        }
+                    }
+                }
+            } catch (parseError) {
+                console.warn('Error parsing transport check response:', parseError);
+            }
+
+            // No fallback to getTransportRequests as user stated it is not needed/URL is wrong.
+            // If the list is empty, it means no requests returned by check.
+
+            return { required, availableRequests };
+
+        } catch (error) {
+            console.error('Failed to check transport requirements:', error);
+            const fallbackRequests = await this.getTransportRequests(profileName);
+            return { 
+                required: true, 
+                availableRequests: fallbackRequests.map(r => ({ trId: r.trId, description: r.description }))
+            };
         }
     }
 
@@ -308,49 +472,137 @@ export class DeployService {
             throw new Error(`Password for profile "${profileName}" not found`);
         }
 
-        progress.report({ message: 'Initializing uploader...' });
+        const fs = require('fs');
+        const path = require('path');
+        const cp = require('child_process');
 
-        // nwabap-ui5uploader expects options object
-        const uploader = require('nwabap-ui5uploader');
+        // Check for package.json to trigger build
+        let projectRoot = params.sourceDir;
+        if (!fs.existsSync(path.join(projectRoot, 'package.json'))) {
+             // Try parent folder if sourceDir is already 'dist' or similar
+             const parent = path.dirname(projectRoot);
+             if (fs.existsSync(path.join(parent, 'package.json'))) {
+                 projectRoot = parent;
+             }
+        }
 
-        const options = {
-            conn: {
-                server: profile.server,
-                client: profile.client,
-                useStrictSSL: profile.useStrictSSL
-            },
-            auth: {
-                user: profile.user,
-                pwd: password
-            },
-            ui5: {
-                package: params.package,
-                bspcontainer: params.bspName,
-                bspcontainer_text: params.description,
-                transportno: params.transport,
-                create_transport: false, // We assume user provides TR or existing one
-                calc_appindex: true // Usually good to recalculate
-            }
+        if (fs.existsSync(path.join(projectRoot, 'package.json'))) {
+             progress.report({ message: 'Building project (npm run build)...' });
+             
+             await new Promise<void>((resolve, reject) => {
+                 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+                 // Run install first to ensure deps
+                 // Note: Skipping install to save time if node_modules exists? 
+                 // Let's assume deps are there or run install if missing? 
+                 // Better to just run build. If it fails, user should fix deps.
+                 
+                 const buildProcess = cp.spawn(npmCommand, ['run', 'build'], {
+                     cwd: projectRoot,
+                     shell: true
+                 });
+
+                 buildProcess.stdout.on('data', (d: any) => console.log(d.toString()));
+                 buildProcess.stderr.on('data', (d: any) => console.error(d.toString()));
+
+                 buildProcess.on('close', (code: number) => {
+                     if (code === 0) resolve();
+                     else reject(new Error('Build failed'));
+                 });
+             });
+        }
+
+        // After build (or if skipped), determine the correct source directory to upload from.
+        // Priority:
+        // 1. 'dist' folder (if built successfully)
+        // 2. 'webapp' folder (standard UI5 source)
+        // 3. Project root (fallback, but risky as it uploads everything)
+        
+        let cwd = params.sourceDir;
+        
+        if (fs.existsSync(path.join(projectRoot, 'dist'))) {
+            cwd = path.join(projectRoot, 'dist');
+        } else if (fs.existsSync(path.join(projectRoot, 'webapp'))) {
+             // Fallback: if no dist, use webapp folder to ensure we upload contents, not the folder itself
+             cwd = path.join(projectRoot, 'webapp');
+        }
+
+        // Create a temporary .nwabaprc configuration
+        const nwabapConfig = {
+            base: './', // The sourceDir is passed as cwd to the process, so base is relative to it
+            files: "**",
+            conn_server: profile.server,
+            conn_client: profile.client,
+            conn_user: profile.user,
+            conn_password: password,
+            conn_usestrictssl: profile.useStrictSSL,
+            abap_package: params.package,
+            abap_bsp: params.bspName,
+            abap_bsp_text: params.description,
+            abap_transport: params.transport,
+            abap_language: "EN",
+            calcappindex: true
         };
 
-        // nwabap-ui5uploader typical usage:
-        // uploader.uploadAll(options, sourceDir)
-        // It returns a promise.
+        const configPath = path.join(cwd, '.nwabaprc');
 
-        progress.report({ message: 'Uploading files to SAP...' });
-        
         try {
-            // We need to capture stdout/logs from uploader if possible, but for now just await it.
-            // The library prints to console. We might want to redirect console.log temporarily?
-            // Or just trust it throws on error.
-            
-            await uploader.uploadAll(options, params.sourceDir);
-            
-            progress.report({ message: 'Deployment complete!' });
+            // Write config file
+            fs.writeFileSync(configPath, JSON.stringify(nwabapConfig, null, 4));
 
-        } catch (error) {
+            progress.report({ message: 'Uploading files...' });
+
+            await new Promise<void>((resolve, reject) => {
+                const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+                
+                // Using --nwabaprc option to point to our generated config if needed, 
+                // but since we wrote it to cwd, it should pick it up automatically or we pass explicitly.
+                // FIX: use --package to ensure npx finds the correct package even if not in node_modules of dist
+                const uploadProcess = cp.spawn(npxCommand, ['--package', 'nwabap-ui5uploader', 'nwabap', 'upload'], {
+                    cwd: cwd,
+                    shell: true,
+                    env: { ...process.env }
+                });
+
+                let stdout = '';
+                let stderr = '';
+
+                uploadProcess.stdout.on('data', (data: any) => {
+                    const message = data.toString();
+                    stdout += message;
+                    if (message.includes('Uploading')) {
+                        progress.report({ message: message.trim() });
+                    }
+                });
+
+                uploadProcess.stderr.on('data', (data: any) => {
+                    stderr += data.toString();
+                });
+
+                uploadProcess.on('close', (code: number) => {
+                    // Clean up config file
+                    try { fs.unlinkSync(configPath); } catch (e) {}
+
+                    if (code === 0) {
+                        progress.report({ message: 'Deployment complete!' });
+                        resolve();
+                    } else {
+                        const errorMessage = stderr || stdout || `Process exited with code ${code}`;
+                        reject(new Error(errorMessage));
+                    }
+                });
+
+                uploadProcess.on('error', (error: any) => {
+                     // Clean up config file
+                    try { fs.unlinkSync(configPath); } catch (e) {}
+                    reject(error);
+                });
+            });
+
+        } catch (error: any) {
             console.error('Upload failed:', error);
-            throw new Error(`Upload failed: ${error}`);
+            // Try clean up in case of error
+            try { if (fs.existsSync(configPath)) fs.unlinkSync(configPath); } catch (e) {}
+            throw error;
         }
     }
 }
