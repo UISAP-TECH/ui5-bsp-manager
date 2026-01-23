@@ -16,6 +16,7 @@ export class SapConnection {
   private axiosInstance: AxiosInstance;
   private csrfToken: string | null = null;
   private config: SapConnectionConfig;
+  private cookies: string[] = [];
 
   constructor(config: SapConnectionConfig) {
     this.config = config;
@@ -43,11 +44,40 @@ export class SapConnection {
           }),
     });
 
-    // Add response interceptor for error handling
+    // Request Interceptor: Add Cookies
+    this.axiosInstance.interceptors.request.use((req) => {
+        if (this.cookies && this.cookies.length > 0) {
+            req.headers['Cookie'] = this.cookies.join('; ');
+        }
+        return req;
+    });
+
+    // Response Interceptor: Capture Cookies & Error Handling
     this.axiosInstance.interceptors.response.use(
-      (response) => response,
+      (response) => {
+          // Capture cookies
+          const setCookie = response.headers['set-cookie'];
+          if (setCookie) {
+              if (Array.isArray(setCookie)) {
+                  this.updateCookies(setCookie);
+              } else {
+                 this.updateCookies([setCookie]);
+              }
+          }
+          return response;
+      },
       (error) => {
         if (error.response) {
+            // Check for cookies even in error responses (e.g. 401 might set a cookie? unlikely but good practice)
+           const setCookie = error.response.headers['set-cookie'];
+           if (setCookie) {
+                if (Array.isArray(setCookie)) {
+                    this.updateCookies(setCookie);
+                } else {
+                    this.updateCookies([setCookie]);
+                }
+           }
+
           const status = error.response.status;
           if (status === 401) {
             throw new Error(
@@ -66,6 +96,19 @@ export class SapConnection {
         throw error;
       },
     );
+  }
+
+  // Helper to merge new cookies
+  private updateCookies(newCookies: string[]) {
+      if (!this.cookies) this.cookies = [];
+      newCookies.forEach(cookie => {
+          // Extract name (part before =)
+          const name = cookie.split('=')[0];
+          // Remove existing cookie with same name
+          this.cookies = this.cookies.filter(c => c.split('=')[0] !== name);
+          // Add new
+          this.cookies.push(cookie);
+      });
   }
 
   /**

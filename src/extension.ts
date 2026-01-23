@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { ProfileExplorerProvider } from './views/BspExplorer';
 import { BspWebviewProvider } from './views/BspWebviewProvider';
 import { ProfileFormPanel } from './views/ProfileFormPanel';
+import { DeployFormPanel } from './views/DeployFormPanel';
+import { DeployService } from './services/DeployService';
 import { ConfigService } from './services/ConfigService';
 import { uploadBspCommand } from './commands/uploadBsp';
 
@@ -199,9 +201,11 @@ export function activate(context: vscode.ExtensionContext) {
             );
         }),
 
-        // Upload BSP application
-        vscode.commands.registerCommand('bspManager.uploadBsp', () => {
-            uploadBspCommand(configService);
+        // Upload BSP application (Deploy)
+        vscode.commands.registerCommand('bspManager.uploadBsp', async () => {
+             // Decoupled from active BspService to allow Wizard to handle connection
+             const deployService = new DeployService(configService);
+             DeployFormPanel.createOrShow(context.extensionUri, configService, deployService);
         }),
 
         // Configure connection (opens profile form)
