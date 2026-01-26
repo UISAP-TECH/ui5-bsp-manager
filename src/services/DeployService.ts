@@ -135,13 +135,11 @@ export class DeployService {
      */
     async getTransportRequests(profileName: string): Promise<any[]> {
         try {
-            debugger;
             const profile = this.configService.getProfile(profileName);
             if (!profile) return [];
             
             const password = await this.configService.getPassword(profileName);
             if (!password) return [];
-
             const { SapConnection } = require('./SapConnection');
             const connection = new SapConnection({ ...profile, password });
 
@@ -202,7 +200,6 @@ export class DeployService {
 
         try {
             const response = await connection.post(url, body, { headers });
-            debugger;
             // Parsing response logic (handling text/plain where server returns path)
             if (typeof response === 'string') {
                  // Example: /com.sap.cts/object_record/T4DK955259

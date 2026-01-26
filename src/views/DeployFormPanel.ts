@@ -163,7 +163,6 @@ export class DeployFormPanel {
                         // Logic: If 'create' mode was selected, we need to create TR first
                         if (message.data.trOption === 'create') {
                             vscode.window.showInformationMessage(`Creating Transport Request: ${message.data.trDescription}...`);
-                            debugger;
                             transportId = await this.deployService.createTransportRequest(
                                 message.data.profile, 
                                 message.data.trDescription,
@@ -172,7 +171,6 @@ export class DeployFormPanel {
                             );
                             vscode.window.showInformationMessage(`Created Transport Request: ${transportId}`);
                         }
-                        debugger;
                         await this.deployService.deploy(
                             message.data.profile, 
                             {
