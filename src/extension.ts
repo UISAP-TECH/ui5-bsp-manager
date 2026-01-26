@@ -208,6 +208,29 @@ export function activate(context: vscode.ExtensionContext) {
              DeployFormPanel.createOrShow(context.extensionUri, configService, deployService);
         }),
 
+        // Deploy from Context Menu (File/Folder)
+        vscode.commands.registerCommand('bspManager.deployFromContext', async (uri: vscode.Uri) => {
+             const deployService = new DeployService(configService);
+             
+             // If triggered from command palette, uri might be undefined
+             // If from context menu, it's the file/folder uri
+             let targetPath = uri ? uri.fsPath : undefined;
+             
+             // If no path, try active editor (loose context)
+             if (!targetPath) {
+                 if (vscode.window.activeTextEditor) {
+                     targetPath = vscode.window.activeTextEditor.document.uri.fsPath;
+                 }
+             }
+
+             if (targetPath) {
+                 // Open wizard with pre-selected path
+                 DeployFormPanel.createOrShow(context.extensionUri, configService, deployService, targetPath);
+             } else {
+                 vscode.window.showErrorMessage('No file or project context found for deployment.');
+             }
+        }),
+
         // Configure connection (opens profile form)
         vscode.commands.registerCommand('bspManager.configure', () => {
             ProfileFormPanel.createOrShow(context.extensionUri, configService, undefined, () => {

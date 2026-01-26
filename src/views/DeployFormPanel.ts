@@ -14,13 +14,16 @@ export class DeployFormPanel {
     public static createOrShow(
         extensionUri: vscode.Uri,
         configService: ConfigService,
-        deployService: DeployService
+        deployService: DeployService,
+        initialPath?: string // New optional arg
     ) {
         const column = vscode.ViewColumn.One;
 
         if (DeployFormPanel.currentPanel) {
             DeployFormPanel.currentPanel._panel.reveal(column);
             DeployFormPanel.currentPanel.deployService = deployService;
+            // Update initial path if provided to existing panel
+            if (initialPath) DeployFormPanel.currentPanel._initialPath = initialPath;
             return;
         }
 
@@ -39,20 +42,25 @@ export class DeployFormPanel {
             panel,
             extensionUri,
             configService,
-            deployService
+            deployService,
+            initialPath
         );
     }
+
+    private _initialPath?: string;
 
     private constructor(
         panel: vscode.WebviewPanel,
         extensionUri: vscode.Uri,
         configService: ConfigService,
-        deployService: DeployService
+        deployService: DeployService,
+        initialPath?: string
     ) {
         this._panel = panel;
         this._extensionUri = extensionUri;
         this.configService = configService;
         this.deployService = deployService;
+        this._initialPath = initialPath;
 
         this._update();
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
@@ -84,10 +92,11 @@ export class DeployFormPanel {
 
             case 'checkNewApp':
                 try {
-                    const newResult = await this.deployService.checkApplication(message.profile, message.appName);
+                    // Use simpler check logic for new apps
+                    const exists = await this.deployService.checkApplicationExists(message.profile, message.appName);
                     this._panel.webview.postMessage({ 
                         command: 'checkNewAppResult', 
-                        exists: newResult.exists
+                        exists: exists
                     });
                 } catch (e) {
                     this._panel.webview.postMessage({ command: 'checkNewAppResult', exists: false, error: true });
@@ -159,19 +168,43 @@ export class DeployFormPanel {
 
             case 'deploy':
                  // Final Deploy Step
-                 const folderUri = await vscode.window.showOpenDialog({
-                     canSelectFiles: false,
-                     canSelectFolders: true,
-                     canSelectMany: false,
-                     openLabel: 'Select Dist Folder to Upload'
-                 });
-                 
-                 if (!folderUri || folderUri.length === 0) {
-                     this._panel.webview.postMessage({ command: 'deployFinished', success: false, message: 'Cancelled' });
-                     return;
+                 let sourceDir = '';
+
+                 if (this._initialPath) {
+                     // Use stored path from context menu
+                     const fs = require('fs');
+                     const p = require('path');
+                     let dir = this._initialPath;
+                     try {
+                        const stats = fs.statSync(this._initialPath);
+                        if(stats.isFile()) dir = p.dirname(this._initialPath);
+                     } catch(e) {}
+                     
+                     // Auto-detect 'dist' if in 'webapp' or root
+                     const distPath = p.join(dir, 'dist');
+                     const siblingDist = p.join(p.dirname(dir), 'dist');
+                     
+                     if (fs.existsSync(distPath)) {
+                         sourceDir = distPath;
+                     } else if (p.basename(dir) === 'webapp' && fs.existsSync(siblingDist)) {
+                         sourceDir = siblingDist;
+                     } else {
+                         sourceDir = dir; // Fallback
+                     }
+                 } else {
+                     const folderUri = await vscode.window.showOpenDialog({
+                         canSelectFiles: false,
+                         canSelectFolders: true,
+                         canSelectMany: false,
+                         openLabel: 'Select Dist Folder to Upload'
+                     });
+
+                     if (!folderUri || folderUri.length === 0) {
+                         this._panel.webview.postMessage({ command: 'deployFinished', success: false, message: 'Cancelled' });
+                         return;
+                     }
+                     sourceDir = folderUri[0].fsPath;
                  }
-                 
-                 const sourceDir = folderUri[0].fsPath;
 
                  vscode.window.withProgress({
                     location: vscode.ProgressLocation.Notification,
@@ -1138,7 +1171,9 @@ export class DeployFormPanel {
             package: '',
             transport: '',
             trOption: '',
-            trDescription: ''
+            trDescription: '',
+            skippedStep3: false,
+            isLocked: false
         };
         let availableTrs = [];
 
@@ -1194,17 +1229,22 @@ export class DeployFormPanel {
                 // Check if $TMP - skip Step 3 entirely
                 if (wizardData.package === '$TMP') {
                     wizardData.transport = '';
+                    wizardData.skippedStep3 = true;
                     prepareSummary();
                     showStep(4);
                     return;
                 }
                 
                 // SKIPPING LOGIC: If app is already locked by a transport, skip step 3
-                if(wizardData.transport) {
+                if(wizardData.isLocked && wizardData.transport) {
+                    wizardData.skippedStep3 = true;
                     prepareSummary();
                     showStep(4);
                     return;
                 }
+                
+                // Reset flag if not skipping
+                wizardData.skippedStep3 = false;
 
                 // Show loading and request transport check
                 document.getElementById('trLoading').style.display = 'block';
@@ -1290,6 +1330,10 @@ export class DeployFormPanel {
         }
 
         function goBack() {
+            if (currentStep === 4 && wizardData.skippedStep3) {
+                showStep(2);
+                return;
+            }
             if (currentStep > 1) showStep(currentStep - 1);
         }
 
@@ -1732,8 +1776,13 @@ export class DeployFormPanel {
                     // Select App
                     document.getElementById('existingAppName').value = app.name;
                     
-                    // Store description immediately from list (since backend check skips it)
+                    // Store description immediately
                     wizardData.description = app.description || '';
+                    // RESET critical data when switching apps
+                    wizardData.transport = ''; 
+                    wizardData.package = '';
+                    wizardData.isLocked = false;
+                    
                     document.getElementById('infoDesc').innerText = app.description || ''; // Update UI info
 
                     // Trigger Check
@@ -1793,7 +1842,9 @@ export class DeployFormPanel {
 
                          wizardData.package = msg.package;
                          if (msg.description) wizardData.description = msg.description;
-                         if (msg.transport) wizardData.transport = msg.transport; 
+                         // Always update transport (clear it if undefined)
+                         wizardData.transport = msg.transport || ''; 
+                         wizardData.isLocked = !!msg.transport;
                      }
                     break;
 

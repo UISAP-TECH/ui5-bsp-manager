@@ -135,6 +135,44 @@ export class DeployService {
         }
     }
 
+    /**
+     * Checks if a BSP application simply exists (lighter check).
+     * Used for new application validation to avoid 400 errors from strict transport checks.
+     */
+    async checkApplicationExists(profileName: string, appName: string): Promise<boolean> {
+        try {
+            const profile = this.configService.getProfile(profileName);
+            if (!profile) return false;
+
+            const password = await this.configService.getPassword(profileName);
+            if (!password) return false;
+
+            const { SapConnection } = require('./SapConnection');
+            const connection = new SapConnection({ ...profile, password });
+
+            // Simple GET to check existence
+            // If it exists, it returns 200. If not, 404.
+            try {
+                await connection.get(`/sap/bc/adt/filestore/ui5-bsp/objects/${appName}`);
+                return true;
+            } catch (e: any) {
+                if (e.response && e.response.status === 404) {
+                    return false;
+                }
+                // If 400 (Bad Request) or others, it likely doesn't exist or is invalid, 
+                // but we should treat it as "not found" for the purpose of "can I create this name?"
+                // unless it's a connection error.
+                if (e.response && e.response.status === 400) {
+                     return false; 
+                }
+                throw e; // Rethrow real errors (401, 500 etc)
+            }
+        } catch (error) {
+             // Suppress error for UI check, assume safe to proceed or will fail later with better msg
+             return false;
+        }
+    }
+
 
 
     /**
@@ -630,58 +668,86 @@ export class DeployService {
 
             progress.report({ message: 'Uploading files...' });
 
-            await new Promise<void>((resolve, reject) => {
-                const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-                
-                // Using --nwabaprc option to point to our generated config if needed, 
-                // but since we wrote it to cwd, it should pick it up automatically or we pass explicitly.
-                // FIX: use --package to ensure npx finds the correct package even if not in node_modules of dist
-                const uploadProcess = cp.spawn(npxCommand, ['--package', 'nwabap-ui5uploader', 'nwabap', 'upload'], {
-                    cwd: cwd,
-                    shell: true,
-                    env: { ...process.env }
-                });
-
-                let stdout = '';
-                let stderr = '';
-
-                uploadProcess.stdout.on('data', (data: any) => {
-                    const message = data.toString();
-                    stdout += message;
-                    if (message.includes('Uploading')) {
-                        progress.report({ message: message.trim() });
-                    }
-                });
-
-                uploadProcess.stderr.on('data', (data: any) => {
-                    stderr += data.toString();
-                });
-
-                uploadProcess.on('close', (code: number) => {
-                    // Clean up config file
-                    try { fs.unlinkSync(configPath); } catch (e) {}
-
-                    if (code === 0) {
-                        progress.report({ message: 'Deployment complete!' });
-                        resolve();
-                    } else {
-                        const errorMessage = stderr || stdout || `Process exited with code ${code}`;
-                        reject(new Error(errorMessage));
-                    }
-                });
-
-                uploadProcess.on('error', (error: any) => {
-                     // Clean up config file
-                    try { fs.unlinkSync(configPath); } catch (e) {}
-                    reject(error);
-                });
-            });
+            await DeployService.runNwabapUpload(cwd, progress);
 
         } catch (error: any) {
             console.error('Upload failed:', error);
             // Try clean up in case of error
             try { if (fs.existsSync(configPath)) fs.unlinkSync(configPath); } catch (e) {}
             throw error;
+        }
+    }
+    /**
+     * Executes the nwabap upload process.
+     * Shared by DeployService.deploy and uploadBsp command.
+     */
+    static async runNwabapUpload(
+        projectFolder: string, 
+        progress?: vscode.Progress<{ message?: string; increment?: number }>,
+        maxRetries: number = 3
+    ): Promise<void> {
+        const cp = require('child_process');
+        const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                if (attempt > 1 && progress) {
+                    progress.report({ message: `Retrying upload (Attempt ${attempt}/${maxRetries})...` });
+                    // Wait 2 seconds before retry
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+
+                await new Promise<void>((resolve, reject) => {
+                    // Using --package to ensure npx finds the correct package even if not in node_modules
+                    const uploadProcess = cp.spawn(npxCommand, ['--package', 'nwabap-ui5uploader', 'nwabap', 'upload'], {
+                        cwd: projectFolder,
+                        shell: true,
+                        env: { ...process.env }
+                    });
+        
+                    let stdout = '';
+                    let stderr = '';
+        
+                    uploadProcess.stdout.on('data', (data: any) => {
+                        const message = data.toString();
+                        stdout += message;
+                        if (message.includes('Uploading') && progress) {
+                            progress.report({ message: message.trim() });
+                        }
+                    });
+        
+                    uploadProcess.stderr.on('data', (data: any) => {
+                        stderr += data.toString();
+                    });
+        
+                    uploadProcess.on('close', (code: number) => {
+                        if (code === 0) {
+                            if (progress) progress.report({ message: 'Deployment complete!' });
+                            resolve();
+                        } else {
+                            const errorMessage = stderr || stdout || `Process exited with code ${code}`;
+                            // Check if it's a connection error to decide if retry is worth it? 
+                            // For now, retry on any error as BSP upload is idempotent.
+                            reject(new Error(errorMessage));
+                        }
+                    });
+        
+                    uploadProcess.on('error', (error: any) => {
+                        reject(error);
+                    });
+                });
+
+                // If success, return immediately
+                return;
+
+            } catch (error: any) {
+                console.warn(`Upload attempt ${attempt} failed:`, error.message);
+                
+                // If this was the last attempt, throw the error
+                if (attempt === maxRetries) {
+                    throw error;
+                }
+            }
         }
     }
 }

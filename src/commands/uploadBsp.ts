@@ -85,52 +85,19 @@ export async function uploadBspCommand(configService: ConfigService): Promise<vo
         async (progress) => {
             progress.report({ message: 'Starting upload...' });
 
-            return new Promise<void>((resolve, reject) => {
-                // First, check if nwabap is available
-                const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-                
-                const uploadProcess = cp.spawn(npxCommand, ['nwabap', 'upload'], {
-                    cwd: projectFolder,
-                    shell: true,
-                    env: { ...process.env }
-                });
-
-                let stdout = '';
-                let stderr = '';
-
-                uploadProcess.stdout.on('data', (data) => {
-                    const message = data.toString();
-                    stdout += message;
+            return new Promise<void>(async (resolve, reject) => {
+                try {
+                    const { DeployService } = require('../services/DeployService');
+                    await DeployService.runNwabapUpload(projectFolder!, progress);
                     
-                    // Parse progress from output
-                    if (message.includes('Uploading')) {
-                        progress.report({ message: message.trim() });
-                    }
-                });
-
-                uploadProcess.stderr.on('data', (data) => {
-                    stderr += data.toString();
-                });
-
-                uploadProcess.on('close', (code) => {
-                    if (code === 0) {
-                        vscode.window.showInformationMessage(
-                            `Successfully deployed "${config!.abap_bsp}" to SAP!`
-                        );
-                        resolve();
-                    } else {
-                        const errorMessage = stderr || stdout || `Process exited with code ${code}`;
-                        vscode.window.showErrorMessage(`Deployment failed: ${errorMessage}`);
-                        reject(new Error(errorMessage));
-                    }
-                });
-
-                uploadProcess.on('error', (error) => {
-                    vscode.window.showErrorMessage(
-                        `Failed to run nwabap: ${error.message}. Make sure nwabap-ui5uploader is installed.`
+                    vscode.window.showInformationMessage(
+                        `Successfully deployed "${config!.abap_bsp}" to SAP!`
                     );
+                    resolve();
+                } catch (error: any) {
+                    vscode.window.showErrorMessage(`Deployment failed: ${error.message}`);
                     reject(error);
-                });
+                }
             });
         }
     );

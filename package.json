@@ -106,6 +106,12 @@
         "title": "Unset Default Profile",
         "category": "BSP Manager",
         "icon": "$(star-empty)"
+      },
+      {
+        "command": "bspManager.deployFromContext",
+        "title": "Deploy BSP Application",
+        "category": "BSP Manager",
+        "icon": "$(cloud-upload)"
       }
     ],
     "viewsContainers": {
@@ -141,6 +147,13 @@
           "command": "bspManager.addProfile",
           "when": "view == bspProfiles",
           "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "bspManager.deployFromContext",
+          "when": "resourceFilename == index.html",
+          "group": "2_workspace"
         }
       ],
       "view/item/context": [
