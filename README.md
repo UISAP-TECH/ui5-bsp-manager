@@ -1,71 +1,61 @@
-# ui5-bsp-manager README
+# UI5 BSP Manager for VS Code
 
-This is the README for your extension "ui5-bsp-manager". After writing up a brief description, we recommend including the following sections.
+Manage your SAP UI5 BSP applications directly from VS Code. Inspect, download, and deploy applications to your ABAP backend with ease.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+### 📡 SAP Connection Management
 
-For example if there is an image subfolder under your extension project workspace:
+- Manage multiple SAP system profiles (Dev, Test, Prod).
+- **Secure Storage**: Passwords are saved securely using VS Code's Secret Storage.
+- Support for both standard and custom ports/clients.
 
-\!\[feature X\]\(images/feature-x.png\)
+### 📂 BSP Explorer
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- **List Applications**: View all BSP applications (filtered by 'Z' prefix by default) in a hierarchical tree view.
+- **Search**: Quickly find applications by name.
+- **Inspect**: Browse files and folders within a BSP application without downloading.
+- **UI5 Version**: Auto-detects the backend SAPUI5 version.
+
+### ⬇️ Download
+
+- **Full Project Download**: Download an entire BSP application to your local workspace.
+- **Smart Structure**: Preserves the folder structure compatible with standard UI5 projects.
+
+### 🚀 Smart Deployment (Upload)
+
+- **Wizard-based Deployment**: Step-by-step guide to deploy your app.
+- **Transport Request Integration**:
+  - Automatically checks if a Transport Request (TR) is required.
+  - Lists your modifiable Transport Requests.
+  - **Create TR**: Create a new Workbench Request directly from the wizard.
+- **Safety Checks**:
+  - Validates package assignments.
+  - Checks for locked objects.
+  - Prevents overwriting valid Transport locks.
+- **New & Update Modes**: seamless workflow for both creating new BSPs and updating existing ones.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- **backend**: SAP NetWeaver AS ABAP with ADT (ABAP Development Tools) services enabled.
+- **client**: `nwabap-ui5uploader` (installed automatically or via `npm`).
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
 This extension contributes the following settings:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- `bspManager.defaultProfile`: The name of the profile to use by default.
 
-## Known Issues
+## Getting Started
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+1.  Open the **UI5 BSP Manager** view in the Activity Bar.
+2.  Click **Add Profile** to configure your SAP system.
+3.  Click on a profile to connect.
+4.  Browse applications or right-click to **Download**.
+5.  To deploy, open your local project and click the **Deploy to BSP** icon in the editor title or use the Command Palette.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+- Initial release with Explorer, Download, and Smart Deploy features.
