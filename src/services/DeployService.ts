@@ -99,25 +99,34 @@ export class DeployService {
                 // Check LOCKS node
                 if (data2 && data2.LOCKS && data2.LOCKS.CTS_OBJECT_LOCK) {
                     const lock = data2.LOCKS.CTS_OBJECT_LOCK;
-                    if (lock.LOCK_HOLDER && lock.LOCK_HOLDER.TRKORR) {
-                        transport = lock.LOCK_HOLDER.TRKORR;
+                    if (lock.LOCK_HOLDER) {
+                        // Check REQ_HEADER (Review provided JSON structure)
+                        if (lock.LOCK_HOLDER.REQ_HEADER && lock.LOCK_HOLDER.REQ_HEADER.TRKORR) {
+                            transport = lock.LOCK_HOLDER.REQ_HEADER.TRKORR;
+                        } 
+                        // Fallback: Direct property (some systems)
+                        else if (lock.LOCK_HOLDER.TRKORR) {
+                            transport = lock.LOCK_HOLDER.TRKORR;
+                        }
                     }
                 }
             } catch (e) {
                 console.warn('Could not extract lock info', e);
             }
             
+            
             // Get description from BspService as fallback/detail
             // If packageVal is found, it effectively EXISTS.
             // If packageVal is empty, it might NOT exist (or is $TMP local).
             
-            const details = await tempBspService.getBspDetails(appName);
-
+            // OPTIMIZATION: Removed extra getBspDetails call as requested.
+            // Data is extracted from parsed1 (Package) and parsed2 (Transport).
+            
             return {
-                exists: !!packageVal || details.package !== '$TMP' || (await tempBspService.getContents(appName, '')).length > 0, // Robust existence check
-                transport: transport || details.transport,
-                package: packageVal || details.package,
-                description: details.description
+                exists: !!packageVal, 
+                transport: transport,
+                package: packageVal,
+                description: '' // Description is handled by UI list or not needed for check logic
             };
 
         } catch (error) {
@@ -150,6 +159,30 @@ export class DeployService {
             }
         }
         return results;
+    }
+
+    /**
+     * Fetches all BSP applications from the system.
+     */
+    async getBspApplications(profileName: string): Promise<any[]> {
+        try {
+            const profile = this.configService.getProfile(profileName);
+            if (!profile) return [];
+            
+            const password = await this.configService.getPassword(profileName);
+            if (!password) return [];
+
+            const { SapConnection } = require('./SapConnection');
+            const connection = new SapConnection({ ...profile, password });
+
+            const { BspService } = require('./BspService');
+            const bspService = new BspService(connection);
+
+            return await bspService.listBspApplications(); // Use correct method
+        } catch (error) {
+            console.error('Failed to get BSP applications:', error);
+            return [];
+        }
     }
 
     /**

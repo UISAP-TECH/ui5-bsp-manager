@@ -46,15 +46,30 @@ export class BspService {
             const parsed = this.xmlParser.parse(response);
             const entries = this.getEntries(parsed);
 
-            let applications: BspApplication[] = entries.map((entry: any) => ({
-                name: this.getAttr(entry, 'title') || entry.title || '',
-                description: this.getAttr(entry, 'summary') || entry.summary || '',
-                package: this.extractPackage(entry),
-                createdBy: this.extractProperty(entry, 'createdBy'),
-                createdAt: this.extractProperty(entry, 'createdAt'),
-                changedBy: this.extractProperty(entry, 'changedBy'),
-                changedAt: this.extractProperty(entry, 'changedAt')
-            }));
+            let applications: BspApplication[] = entries.map((entry: any) => {
+                let desc = this.getAttr(entry, 'summary') || entry.summary || '';
+                if (typeof desc === 'object') {
+                    desc = desc['#text'] || desc['text'] || ''; // Handle parsed object
+                }
+                
+                let title = this.getAttr(entry, 'title') || entry.title || '';
+                if (typeof title === 'object') {
+                    title = title['#text'] || title['text'] || '';
+                }
+
+                return {
+                    name: title,
+                    description: desc,
+                    package: this.extractPackage(entry),
+                    createdBy: this.extractProperty(entry, 'createdBy'),
+                    createdAt: this.extractProperty(entry, 'createdAt'),
+                    changedBy: this.extractProperty(entry, 'changedBy'),
+                    changedAt: this.extractProperty(entry, 'changedAt')
+                };
+            });
+            
+            // Filter only Z applications (or /NAMESPACE/)
+            applications = applications.filter(app => app.name.toUpperCase().startsWith('Z'));
 
             // Apply filters
             if (filter?.name) {

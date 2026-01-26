@@ -148,6 +148,15 @@ export class DeployFormPanel {
                 }
                 break;
 
+            case 'getBspApplications':
+                 try {
+                     const apps = await this.deployService.getBspApplications(message.profile);
+                     this._panel.webview.postMessage({ command: 'setBspList', apps: apps });
+                 } catch (e) {
+                     this._panel.webview.postMessage({ command: 'setBspList', apps: [] });
+                 }
+                 break;
+
             case 'deploy':
                  // Final Deploy Step
                  const folderUri = await vscode.window.showOpenDialog({
@@ -576,7 +585,32 @@ export class DeployFormPanel {
         }
         .pkg-item:hover { background: var(--primary); color: white; }
         .pkg-item.selected { background: rgba(0, 122, 204, 0.2); }
-        .pkg-loading { padding: 15px; text-align: center; opacity: 0.7; }
+        .pkg-loading {
+            padding: 20px;
+            text-align: center;
+            opacity: 0.7;
+            font-style: italic;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .pkg-loading::before {
+            content: '';
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--text-color);
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
         /* Transport Request Radio Items */
         .tr-item {
@@ -878,21 +912,48 @@ export class DeployFormPanel {
                 
                 <!-- Update Mode UI -->
                 <div id="updateAppUI" style="display:none;">
-                    <div class="form-group">
-                        <label>Existing Application Name <span style="color: #f44336;">*</span></label>
-                        <div class="pkg-input-group">
-                            <input type="text" id="existingAppName" placeholder="ZMY_APP" style="text-transform:uppercase; font-weight:bold; letter-spacing:1px;">
-                            <button class="btn btn-secondary" id="btnCheckApp">Check</button>
-                        </div>
-                        <div class="error-message" id="existingAppError">Existing Application Name is required</div>
-                        <div id="checkStatus" class="status-box"></div>
-                    </div>
                     
-                    <div id="detectedInfo" class="summary-card" style="display:none; margin-top:20px;">
-                        <div class="summary-row"><span class="sum-label">Package</span> <span class="sum-val" id="infoPkg"></span></div>
-                        <div class="summary-row"><span class="sum-label">Description</span> <span class="sum-val" id="infoDesc"></span></div>
-                        <div class="summary-row"><span class="sum-label">Locked TR</span> <span class="sum-val" id="infoTr"></span></div>
+                    <!-- 1. Status Info (Top - for Locked message) -->
+                    <div id="detectedInfo" class="summary-card" style="display:none; margin-bottom:15px; border:none; background:transparent; padding:0;">
+                            <div id="infoMsg" style="font-size:13px; font-weight:500; color:#4fc3f7;"></div> 
                     </div>
+
+                    <!-- 2. Application Name (Read Only) -->
+                    <div class="form-group">
+                        <label>Application Name <span style="color: #f44336;">*</span></label>
+                        <div class="pkg-input-group">
+                            <input type="text" id="existingAppName" placeholder="" readonly 
+                                    style="text-transform:uppercase; font-weight:bold; letter-spacing:1px; background:rgba(255,255,255,0.05); color:var(--text-color); opacity:0.75; cursor:not-allowed;">
+                            <!-- Hidden Check Button - Triggered by row selection -->
+                            <button class="btn btn-secondary" id="btnCheckApp" style="display:none;">Check</button> 
+                        </div>
+                        <div class="error-message" id="existingAppError">Please select an application from the list</div>
+                        <!-- Helper text for description -->
+                        <div id="infoDesc" style="font-size:11px; opacity:0.6; margin-top:4px; font-style:italic; min-height:16px;"></div>
+                    </div>
+
+                    <!-- 3. Search Bar -->
+                    <div class="search-bar-container" style="position:relative; margin-bottom:0px; margin-top:20px;">
+                        <input type="text" id="bspAppSearch" placeholder="BSP Application Name" autocomplete="off" 
+                                style="width:100%; padding:10px 10px 10px 35px; border-radius:6px 6px 0 0; border-bottom:none; background:rgba(255,255,255,0.02);">
+                        <span style="position:absolute; left:12px; top:10px; opacity:0.5;">🔍</span>
+                        <!-- Clear Button -->
+                        <span id="btnClearSearch" style="position:absolute; right:12px; top:10px; opacity:0.5; cursor:pointer; font-weight:bold; display:none;">✕</span>
+                    </div>
+
+                    <!-- 4. Application Table -->
+                    <div class="bsp-table-container" style="border:1px solid var(--border-color); border-radius:0 0 6px 6px; height:300px; overflow-y:auto; background:rgba(0,0,0,0.2);">
+                        <div class="bsp-table-header" style="display:flex; background:var(--card-bg); padding:8px 10px; font-size:11px; font-weight:bold; opacity:1; border-bottom:1px solid var(--border-color); position:sticky; top:0; z-index:10;">
+                            <div style="width:200px;">Name</div>
+                            <div style="flex:1;">Description</div>
+                        </div>
+                        <div id="bspListContent">
+                            <div class="pkg-loading">Waiting for system connection...</div>
+                        </div>
+                    </div>
+                
+                    <!-- Status Helper (Hidden) -->
+                    <div id="checkStatus" class="status-box" style="margin-top:10px; display:none;"></div>
                 </div>
 
                 <!-- New Mode UI -->
@@ -1112,6 +1173,13 @@ export class DeployFormPanel {
                 
                 document.getElementById('newAppUI').style.display = mode === 'new' ? 'block' : 'none';
                 document.getElementById('updateAppUI').style.display = mode === 'update' ? 'block' : 'none';
+
+                if (mode === 'update') {
+                     // Check if list is loaded or needs refresh
+                     // Trigger load
+                     document.getElementById('bspListContent').innerHTML = '<div class="pkg-loading">Loading applications...</div>';
+                     vscode.postMessage({ command: 'getBspApplications', profile: wizardData.profile });
+                }
             }
 
             if (currentStep === 2) {
@@ -1126,12 +1194,18 @@ export class DeployFormPanel {
                 // Check if $TMP - skip Step 3 entirely
                 if (wizardData.package === '$TMP') {
                     wizardData.transport = '';
-                    // Go directly to Step 4 (Summary)
                     prepareSummary();
                     showStep(4);
                     return;
                 }
                 
+                // SKIPPING LOGIC: If app is already locked by a transport, skip step 3
+                if(wizardData.transport) {
+                    prepareSummary();
+                    showStep(4);
+                    return;
+                }
+
                 // Show loading and request transport check
                 document.getElementById('trLoading').style.display = 'block';
                 document.getElementById('trSection').style.display = 'none';
@@ -1607,6 +1681,78 @@ export class DeployFormPanel {
             });
         }
 
+        // BSP List Logic
+        let allBspApps = [];
+        let bspAppsLoaded = false;
+        
+        const bspInput = document.getElementById('bspAppSearch');
+        const clearBtn = document.getElementById('btnClearSearch');
+
+        if(bspInput) {
+            bspInput.addEventListener('input', () => {
+                const val = bspInput.value;
+                if(clearBtn) clearBtn.style.display = val ? 'block' : 'none';
+                renderBspList(val.toUpperCase());
+            });
+        }
+        
+        if(clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                bspInput.value = '';
+                clearBtn.style.display = 'none';
+                renderBspList('');
+            });
+        }
+
+        function renderBspList(filter) {
+            const container = document.getElementById('bspListContent');
+            if(!container) return;
+            
+            container.innerHTML = '';
+            
+            if(!bspAppsLoaded) {
+                 container.innerHTML = '<div class="pkg-loading">Waiting for list...</div>';
+                 return;
+            }
+
+            const filtered = filter 
+                ? allBspApps.filter(a => a.name.toUpperCase().includes(filter))
+                : allBspApps;
+                
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="tr-table-row" style="justify-content:center; opacity:0.6;">No applications found</div>';
+                return;
+            }
+            
+            filtered.forEach(app => {
+                const row = document.createElement('div');
+                row.className = 'tr-table-row'; // Reuse table style
+                row.style.cursor = 'pointer';
+                row.onclick = () => {
+                    // Select App
+                    document.getElementById('existingAppName').value = app.name;
+                    
+                    // Store description immediately from list (since backend check skips it)
+                    wizardData.description = app.description || '';
+                    document.getElementById('infoDesc').innerText = app.description || ''; // Update UI info
+
+                    // Trigger Check
+                    document.getElementById('btnCheckApp').click();
+                    
+                    // Highlight row (visual only)
+                    document.querySelectorAll('#bspListContent .tr-table-row').forEach(r => r.style.background = '');
+                    row.style.background = 'rgba(255, 255, 255, 0.1)';
+                };
+                
+                row.innerHTML = \`
+                    <div style="width:200px; font-weight:bold;">\${app.name}</div>
+                    <div style="flex:1; opacity:0.8;">\${app.description || '-'}</div>
+                \`;
+                
+                container.appendChild(row);
+            });
+        }
+
         // Message Handling
         window.addEventListener('message', event => {
             const msg = event.data;
@@ -1627,19 +1773,26 @@ export class DeployFormPanel {
                      if (msg.error || !msg.exists) {
                          status.innerText = 'Application not found on this system.';
                          status.classList.add('status-error');
+                         status.style.display = 'block'; // Ensure visible on error
                          document.getElementById('detectedInfo').style.display = 'none';
+                         document.getElementById('existingAppName').value = ''; // clear invalid
                      } else {
-                         status.innerText = 'Application found! Details loaded.';
-                         status.classList.add('status-success');
+                         // Success - Hide generic status
+                         status.style.display = 'none'; 
+                         status.classList.remove('status-success', 'status-error');
                          
-                         // Fill info
-                         document.getElementById('infoPkg').innerText = msg.package;
-                         document.getElementById('infoDesc').innerText = msg.description;
-                         document.getElementById('infoTr').innerText = msg.transport || 'None';
-                         document.getElementById('detectedInfo').style.display = 'block';
+                         // Populate Name if empty (logic consistency)
+                         
+                         // Show lock info only if transport exists
+                         if (msg.transport) {
+                             document.getElementById('infoMsg').innerText = \`This application is locked by transport \${msg.transport}\`;
+                             document.getElementById('detectedInfo').style.display = 'block';
+                         } else {
+                             document.getElementById('detectedInfo').style.display = 'none';
+                         }
 
                          wizardData.package = msg.package;
-                         wizardData.description = msg.description;
+                         if (msg.description) wizardData.description = msg.description;
                          if (msg.transport) wizardData.transport = msg.transport; 
                      }
                     break;
@@ -1702,6 +1855,14 @@ export class DeployFormPanel {
                      }
                      break;
 
+                case 'setBspList':
+                    allBspApps = msg.apps || [];
+                    bspAppsLoaded = true;
+                    // Sort by name
+                    allBspApps.sort((a, b) => a.name.localeCompare(b.name));
+                    renderBspList('');
+                    break;
+                
                 case 'setTransportRequests':
                     // Legacy handler - kept for backwards compatibility
                     availableTrs = msg.requests || [];
