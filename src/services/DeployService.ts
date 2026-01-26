@@ -576,7 +576,8 @@ export class DeployService {
             transport: string;
             sourceDir: string;
         },
-        progress: vscode.Progress<{ message?: string; increment?: number }>
+        progress: vscode.Progress<{ message?: string; increment?: number }>,
+        logCallback?: (line: string) => void
     ): Promise<void> {
         
         const profile = this.configService.getProfile(profileName);
@@ -668,7 +669,7 @@ export class DeployService {
 
             progress.report({ message: 'Uploading files...' });
 
-            await DeployService.runNwabapUpload(cwd, progress);
+            await DeployService.runNwabapUpload(cwd, progress, 3, logCallback);
 
         } catch (error: any) {
             console.error('Upload failed:', error);
@@ -684,7 +685,8 @@ export class DeployService {
     static async runNwabapUpload(
         projectFolder: string, 
         progress?: vscode.Progress<{ message?: string; increment?: number }>,
-        maxRetries: number = 3
+        maxRetries: number = 3,
+        logCallback?: (line: string) => void
     ): Promise<void> {
         const cp = require('child_process');
         const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
@@ -711,6 +713,15 @@ export class DeployService {
                     uploadProcess.stdout.on('data', (data: any) => {
                         const message = data.toString();
                         stdout += message;
+                        
+                        // Stream to callback if provided
+                        if (logCallback) {
+                             // Split by newlines to handle buffered output
+                             message.split('\n').forEach((line: string) => {
+                                 if(line.trim()) logCallback(line.trim());
+                             });
+                        }
+                        
                         if (message.includes('Uploading') && progress) {
                             progress.report({ message: message.trim() });
                         }

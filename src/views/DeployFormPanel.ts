@@ -234,9 +234,51 @@ export class DeployFormPanel {
                                 transport: transportId, // Use the potentially new transportId
                                 sourceDir: sourceDir
                             }, 
-                            progress
+                            progress,
+                            (line) => {
+                                // Strip ANSI codes
+                                // eslint-disable-next-line
+                                let cleanMsg = line.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+                                
+                                // Format specific lines
+                                if (cleanMsg.includes('File') && cleanMsg.includes('updated')) {
+                                    const match = cleanMsg.match(/File\s+(.*?)\s+updated/);
+                                    if (match && match[1]) {
+                                        cleanMsg = 'Uploaded: ' + match[1];
+                                    }
+                                }
+                                
+                                // Only show relevant upload info to avoid spamming the toast
+                                if (cleanMsg.includes('Uploaded:') || cleanMsg.includes('Calculating')) {
+                                     // Using \u00A0 (Non-breaking space) or just new line trying to push content down
+                                     // VS Code notifications concatenate nicely usually. 
+                                     // Trying \n to force separate line look if possible, or just cleaner separator.
+                                     progress.report({ message: '\n' + cleanMsg });
+                                }
+                            }
                         );
-                        vscode.window.showInformationMessage(`Successfully deployed ${message.data.appName}!`);
+                        
+                        // Construct App URL
+                        // Format: <server>/sap/bc/ui5_ui5/sap/<app_name>/index.html?sap-client=<client>
+                        const profile = this.configService.getProfile(message.data.profile);
+                        if (profile) {
+                            let server = profile.server.endsWith('/') ? profile.server.slice(0, -1) : profile.server;
+                            let appName = message.data.appName.toLowerCase();
+                            let client = profile.client;
+                            const appUrl = `${server}/sap/bc/ui5_ui5/sap/${appName}/index.html?sap-client=${client}`;
+                            
+                            vscode.window.showInformationMessage(
+                                `Successfully deployed ${message.data.appName}!`,
+                                'Open App'
+                            ).then(selection => {
+                                if (selection === 'Open App') {
+                                    vscode.env.openExternal(vscode.Uri.parse(appUrl));
+                                }
+                            });
+                        } else {
+                            vscode.window.showInformationMessage(`Successfully deployed ${message.data.appName}!`);
+                        }
+
                         this._panel.webview.postMessage({ command: 'deployFinished', success: true });
                     } catch (error: any) {
                         vscode.window.showErrorMessage(`Deployment failed: ${error.message || error}`);
@@ -860,6 +902,26 @@ export class DeployFormPanel {
         .pkg-list-item small { opacity: 0.8; font-size: 11px; display: block; }
         
         @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Deploy Log Terminal */
+        .deploy-log-container {
+            margin-top: 20px;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 11px;
+            height: 180px;
+            overflow-y: auto;
+            color: #ccc;
+            display: none; 
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+        .log-line { margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid rgba(255,255,255,0.02); }
+        .log-line.info { color: #4fc3f7; }
+        .log-line.success { color: #66bb6a; font-weight:bold; }
+        .log-line.error { color: #f44336; }
     </style>
 </head>
 <body>
@@ -1136,6 +1198,8 @@ export class DeployFormPanel {
                         <span class="sum-val" id="sumTr"></span>
                     </div>
                 </div>
+                
+                <!-- Output Log: Removed as per user request -->
             </div>
 
         </div>
@@ -1748,6 +1812,39 @@ export class DeployFormPanel {
             });
         }
 
+        function logToTerminal(msg) {
+            const container = document.getElementById('deployLog');
+            if(!container) return;
+            
+            container.style.display = 'block';
+            
+            // Strip ANSI codes
+            // eslint-disable-next-line
+            let cleanMsg = msg.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+            
+            // Format specific lines
+            // Example: [OK] File /path/updated matches
+            if (cleanMsg.includes('File') && cleanMsg.includes('updated')) {
+                // Extract file path if possible
+                const match = cleanMsg.match(/File\s+(.*?)\s+updated/);
+                if (match && match[1]) {
+                    cleanMsg = 'Uploaded: ' + match[1];
+                }
+            }
+
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.textContent = cleanMsg; 
+            
+            if (cleanMsg.toLowerCase().includes('success') || cleanMsg.toLowerCase().includes('complete')) div.classList.add('success');
+            if (cleanMsg.toLowerCase().includes('error') || cleanMsg.toLowerCase().includes('failed') || cleanMsg.toLowerCase().includes('exception')) div.classList.add('error');
+            if (cleanMsg.toLowerCase().includes('uploaded:')) div.classList.add('info');
+            
+            container.appendChild(div);
+            // Auto scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+
         function renderBspList(filter) {
             const container = document.getElementById('bspListContent');
             if(!container) return;
@@ -1806,6 +1903,9 @@ export class DeployFormPanel {
         window.addEventListener('message', event => {
             const msg = event.data;
             switch(msg.command) {
+                case 'deployLog':
+                    logToTerminal(msg.message);
+                    break;
                 case 'setUi5Version':
                     document.getElementById('ui5Version').innerText = msg.version;
                     break;
