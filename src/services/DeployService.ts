@@ -31,43 +31,92 @@ export class DeployService {
             const { BspService } = require('./BspService');
             const tempBspService = new BspService(connection);
 
-            // We reuse BspService's getBspDetails which fetches properties including transport
-            const details = await tempBspService.getBspDetails(appName);
+            // NEW LOGIC: Use 2-step transportchecks to discover Package and Locks
+            // Step 1: Check with $new to find Package
+            const url = '/sap/bc/adt/cts/transportchecks';
+            const headers = {
+                'Content-Type': 'application/vnd.sap.as+xml; charset=utf-8; dataname=com.sap.adt.transport.service.checkData',
+                'Accept': 'application/vnd.sap.as+xml; dataname=com.sap.adt.transport.service.checkData'
+            };
+
+            const body1 = `<?xml version="1.0" encoding="UTF-8" ?>
+<asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml">
+	<asx:values>
+		<DATA>
+			<PGMID></PGMID>
+			<OBJECT></OBJECT>
+			<OBJECTNAME></OBJECTNAME>
+			<DEVCLASS></DEVCLASS>
+			<OPERATION></OPERATION>
+			<URI>/sap/bc/adt/filestore/ui5-bsp/objects/${appName}/$new</URI>
+		</DATA>
+	</asx:values>
+</asx:abap>`;
+
+            const response1 = await connection.post(url, body1, { headers });
             
-            // If getBspDetails returns successfully, it likely exists. 
-            // However, BspService.getBspDetails might return default '$TMP' if errored.
-            // Let's rely on listBspApplications filter for strict existence check first?
-            // Actually, querying the object direct is better.
+            const { XMLParser } = require('fast-xml-parser');
+            const parser = new XMLParser({ 
+                ignoreAttributes: false, 
+                attributeNamePrefix: '@_',
+                removeNSPrefix: true 
+            });
+            const parsed1 = parser.parse(response1);
             
-            // If package is $TMP and description is the name, it might be the default error fallback from BspService.
-            // But let's verify existence by trying to read it specifically.
-            // BspService.getContents with empty path should work if app exists.
-            const contents = await tempBspService.getContents(appName, '');
-            if (!contents || contents.length === 0) {
-                 // Maybe it's empty? or doesn't exist.
-                 // Let's assume if we can't get contents, it's not there or accessible.
-                 // A better check might be needed if BspService silently fails.
-                 // BspService.getContents returns [] on error.
-                 
-                 // Let's try listing with filter which is more definitive for existence
-                 const list = await tempBspService.listBspApplications({ name: appName });
-                 const found = list.find((app: any) => app.name.toUpperCase() === appName.toUpperCase());
-                 
-                 if (found) {
-                     return {
-                         exists: true,
-                         transport: details.transport, // details from getBspDetails might still be valid or we need a way to get TR from list item? List item normally doesn't have TR.
-                         package: found.package,
-                         description: found.description
-                     };
-                 }
-                 return { exists: false };
+            // Extract Package (DEVCLASS) from response
+            let packageVal = '';
+            try {
+                const data = parsed1?.abap?.values?.DATA || parsed1?.['asx:abap']?.['asx:values']?.DATA;
+                if (data && data.DEVCLASS) {
+                    packageVal = data.DEVCLASS;
+                }
+            } catch (e) {
+                console.warn('Could not extract package from check 1', e);
             }
 
+            // Step 2: Check with discovered package to find Locks
+            const body2 = `<?xml version="1.0" encoding="UTF-8" ?>
+<asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml">
+	<asx:values>
+		<DATA>
+			<PGMID></PGMID>
+			<OBJECT></OBJECT>
+			<OBJECTNAME></OBJECTNAME>
+			<DEVCLASS>${packageVal}</DEVCLASS>
+			<OPERATION>I</OPERATION>
+			<URI>/sap/bc/adt/filestore/ui5-bsp/objects/${appName}/$create</URI>
+		</DATA>
+	</asx:values>
+</asx:abap>`;
+
+            const response2 = await connection.post(url, body2, { headers });
+            const parsed2 = parser.parse(response2);
+            
+            // Extract Lock Info
+            let transport = undefined;
+            try {
+                const data2 = parsed2?.abap?.values?.DATA || parsed2?.['asx:abap']?.['asx:values']?.DATA;
+                // Check LOCKS node
+                if (data2 && data2.LOCKS && data2.LOCKS.CTS_OBJECT_LOCK) {
+                    const lock = data2.LOCKS.CTS_OBJECT_LOCK;
+                    if (lock.LOCK_HOLDER && lock.LOCK_HOLDER.TRKORR) {
+                        transport = lock.LOCK_HOLDER.TRKORR;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not extract lock info', e);
+            }
+            
+            // Get description from BspService as fallback/detail
+            // If packageVal is found, it effectively EXISTS.
+            // If packageVal is empty, it might NOT exist (or is $TMP local).
+            
+            const details = await tempBspService.getBspDetails(appName);
+
             return {
-                exists: true,
-                transport: details.transport,
-                package: details.package,
+                exists: !!packageVal || details.package !== '$TMP' || (await tempBspService.getContents(appName, '')).length > 0, // Robust existence check
+                transport: transport || details.transport,
+                package: packageVal || details.package,
                 description: details.description
             };
 

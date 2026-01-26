@@ -82,6 +82,18 @@ export class DeployFormPanel {
                 }
                 break;
 
+            case 'checkNewApp':
+                try {
+                    const newResult = await this.deployService.checkApplication(message.profile, message.appName);
+                    this._panel.webview.postMessage({ 
+                        command: 'checkNewAppResult', 
+                        exists: newResult.exists
+                    });
+                } catch (e) {
+                    this._panel.webview.postMessage({ command: 'checkNewAppResult', exists: false, error: true });
+                }
+                break;
+
             case 'getPackages':
                 // Fetch all packages for ComboBox
                 try {
@@ -1105,9 +1117,8 @@ export class DeployFormPanel {
             if (currentStep === 2) {
                 // Capture App Data
                 if (wizardData.mode === 'new') {
-                    wizardData.appName = document.getElementById('newAppName').value.toUpperCase();
-                    wizardData.description = document.getElementById('newAppDesc').value;
-                    wizardData.package = document.getElementById('newAppPkg').value.toUpperCase();
+                    checkNewAppAndProceed();
+                    return;
                 } else {
                     wizardData.appName = document.getElementById('existingAppName').value.toUpperCase();
                 }
@@ -1516,15 +1527,28 @@ export class DeployFormPanel {
 
         // App Check
         document.getElementById('btnCheckApp').addEventListener('click', () => {
-            const name = document.getElementById('existingAppName').value.toUpperCase();
-            if (!name) return;
-            const status = document.getElementById('checkStatus');
-            status.style.display = 'flex';
-            status.className = 'status-box'; // reset
-            status.innerText = 'Connecting to SAP...';
-            // Include profile in message
-            vscode.postMessage({ command: 'checkApp', appName: name, profile: document.getElementById('profileSelect').value });
+             const name = document.getElementById('existingAppName').value.toUpperCase();
+             if (!name) return;
+             // ... existing logic ...
+             const status = document.getElementById('checkStatus');
+             status.style.display = 'flex'; 
+             status.className = 'status-box'; // reset
+             status.innerText = 'Connecting to SAP...';
+             vscode.postMessage({ command: 'checkApp', appName: name, profile: document.getElementById('profileSelect').value });
         });
+
+        // New App Check (triggered by Next)
+        async function checkNewAppAndProceed() {
+             const name = document.getElementById('newAppName').value.toUpperCase();
+             const btn = document.getElementById('btnNext');
+             const originalText = btn.innerText;
+             
+             btn.disabled = true;
+             btn.innerText = 'Checking...';
+             
+             // Request check
+             vscode.postMessage({ command: 'checkNewApp', appName: name, profile: document.getElementById('profileSelect').value });
+        }
 
         // Package ComboBox
         const pkgInput = document.getElementById('newAppPkg');
@@ -1619,6 +1643,64 @@ export class DeployFormPanel {
                          if (msg.transport) wizardData.transport = msg.transport; 
                      }
                     break;
+
+                case 'checkNewAppResult':
+                     const btn = document.getElementById('btnNext');
+                     btn.disabled = false;
+                     btn.innerText = 'Next ➔';
+                     
+                     if (msg.error) {
+                         // Error checking?
+                         alert('Error checking application existence.');
+                         return;
+                     }
+                     
+                     if (msg.exists) {
+                         const errorEl = document.getElementById('newAppNameError');
+                         errorEl.innerText = \`The Repository object \${document.getElementById('newAppName').value.toUpperCase()} already exists. Enter a unique name.\`;
+                         errorEl.classList.add('visible');
+                         const formGroup = errorEl.closest('.form-group');
+                         if (formGroup) formGroup.classList.add('has-error');
+                     } else {
+                         // Valid! Collect data and move on
+                         wizardData.appName = document.getElementById('newAppName').value.toUpperCase();
+                         wizardData.description = document.getElementById('newAppDesc').value;
+                         wizardData.package = document.getElementById('newAppPkg').value.toUpperCase();
+                         
+                         // Validate other fields again just in case
+                         if(!document.getElementById('newAppDesc').value || !document.getElementById('newAppPkg').value) {
+                              validateStep(2); // Show errors
+                              return;
+                         }
+
+                         // Moving to Step 3
+                         // Check if $TMP - skip Step 3 entirely
+                         if (wizardData.package === '$TMP') {
+                            wizardData.transport = '';
+                            prepareSummary();
+                            showStep(4);
+                            return;
+                         }
+                         
+                         // Transport Check (Create mode always needs Check?)
+                         // Actually, for NEW app, we usually create a transport or select variable.
+                         // Let's do standard transport check for consistency
+                         
+                         document.getElementById('trLoading').style.display = 'block';
+                         document.getElementById('trSection').style.display = 'none';
+                         document.getElementById('noTrWarning').style.display = 'none';
+                         document.getElementById('localObjMsg').style.display = 'none';
+                         
+                         vscode.postMessage({ 
+                            command: 'checkTransport', 
+                            profile: wizardData.profile,
+                            package: wizardData.package,
+                            bspName: wizardData.appName
+                         });
+                         
+                         showStep(3);
+                     }
+                     break;
 
                 case 'setTransportRequests':
                     // Legacy handler - kept for backwards compatibility
