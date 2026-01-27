@@ -2,7 +2,7 @@
   "name": "ui5-bsp-manager",
   "displayName": "SAPUI5 Manager",
   "description": "SAP BSP Upload & Download Manager for SAPUI5 Applications",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "uisap-tech",
   "author": {
     "name": "Ahmet Dik",
