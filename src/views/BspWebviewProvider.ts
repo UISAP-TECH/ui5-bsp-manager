@@ -72,10 +72,14 @@ export class BspWebviewProvider implements vscode.WebviewViewProvider {
         this._updateView();
 
         try {
-            const targetProfile = profileName || this.configService.getDefaultProfile();
+            // FIXED: Do NOT default to defaultProfile here to prevent auto-loading on startup.
+            // Only load if explicitly requested (profileName) or refreshing current view (this.currentProfile).
+            const targetProfile = profileName || this.currentProfile;
             
             if (!targetProfile) {
-                this.errorMessage = 'Select a profile from SAP Profiles above';
+                // No profile selected. 
+                // Don't show error, just show the "No profile loaded" placeholder.
+                this.errorMessage = undefined; 
                 this.isLoading = false;
                 this._updateView();
                 return;
