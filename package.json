@@ -1,7 +1,7 @@
 {
   "name": "ui5-bsp-manager",
-  "displayName": "UI5 BSP Manager",
-  "description": "SAP BSP Upload & Download Manager for UI5 Applications",
+  "displayName": "SAPUI5 Manager",
+  "description": "SAP BSP Upload & Download Manager for SAPUI5 Applications",
   "version": "0.0.2",
   "publisher": "uisap-tech",
   "author": {
@@ -21,6 +21,7 @@
   "keywords": [
     "sap",
     "ui5",
+    "sapui5",
     "bsp",
     "abap",
     "fiori",
