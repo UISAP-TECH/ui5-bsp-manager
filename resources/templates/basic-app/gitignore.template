@@ -1,0 +1,36 @@
+# SAPUI5 build artifacts
+/resources
+/resources/*
+/dist
+/coverage/
+
+# Node.js dependencies
+/node_modules
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# Environment files
+.env
+.env.*
+
+# npm package lock
+package-lock.json
+yarn.lock
+
+# VSCode settings
+.vscode/
+
+# SAPUI5 local server files
+/.ui5/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# SAP Business Application Studio files
+/.project/
+.settings/

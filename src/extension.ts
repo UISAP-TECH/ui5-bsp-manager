@@ -3,6 +3,7 @@ import { ProfileExplorerProvider } from './views/BspExplorer';
 import { BspWebviewProvider } from './views/BspWebviewProvider';
 import { ProfileFormPanel } from './views/ProfileFormPanel';
 import { DeployFormPanel } from './views/DeployFormPanel';
+import { CreateProjectPanel } from './views/CreateProjectPanel';
 import { DeployService } from './services/DeployService';
 import { ConfigService } from './services/ConfigService';
 import { uploadBspCommand } from './commands/uploadBsp';
@@ -400,6 +401,11 @@ export function activate(context: vscode.ExtensionContext) {
                     refreshAll();
                     vscode.window.showInformationMessage(`Profile "${targetProfile}" deleted.`);
                 }
+            }),
+
+            // Create SAPUI5 Project
+            vscode.commands.registerCommand('bspManager.createProject', () => {
+                CreateProjectPanel.createOrShow(context.extensionUri);
             })
         ];
 

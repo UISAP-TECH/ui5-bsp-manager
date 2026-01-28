@@ -1,0 +1,15 @@
+<mvc:View
+	controllerName="<%= namespace %>.controller.Home" xmlns:mvc="sap.ui.core.mvc"
+	displayBlock="true" xmlns="sap.m">
+	<Page id="idHomePage" titleAlignment="Center" title="{i18n>title}">
+		<content>
+			<VBox height="100%" alignItems="Center" justifyContent="Center">
+				<IllustratedMessage
+					title="{i18n>appTitle}"
+					description="{i18n>appDescription}"
+					illustrationType="sapIllus-PageNotFound"
+					illustrationSize="Scene" />
+			</VBox>
+		</content>
+	</Page>
+</mvc:View>

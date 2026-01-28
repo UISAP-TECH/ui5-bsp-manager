@@ -119,6 +119,12 @@
         "title": "Deploy BSP Application",
         "category": "BSP Manager",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bspManager.createProject",
+        "title": "Create SAPUI5 Project",
+        "category": "BSP Manager",
+        "icon": "$(file-add)"
       }
     ],
     "viewsContainers": {
@@ -238,10 +244,15 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
+    "ejs": "^3.1.10",
     "fast-xml-parser": "^4.3.0",
     "nwabap-ui5uploader": "^1.2.0"
   },
+  "bundledDependencies": [
+    "ejs"
+  ],
   "devDependencies": {
+    "@types/ejs": "^3.1.5",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/vscode": "^1.104.0",

@@ -1,0 +1,204 @@
+{
+    "_version": "1.60.0",
+    "sap.app": {
+        "id": "<%= namespace %>",
+        "type": "application",
+        "i18n": "i18n/i18n.properties",
+        "applicationVersion": {
+            "version": "0.0.1"
+        },
+        "title": "{{appTitle}}",
+        "description": "{{appDescription}}",
+        "resources": "resources.json",
+		"sourceTemplate": {
+			"id": "basic_app",
+			"version": "1.0.0"
+		},
+        "dataSources": {
+			<% if (serviceType === 'Rest') { %>
+            "mainServiceAPI": {
+				"uri": "/sap/bc/your_rest_api/",
+				"type": "JSON",
+				"settings": {
+					"sapClient": "100"
+				}
+			}
+            <% } else if (serviceType === 'ODataV2') { %>
+            "mainService": {
+                "uri": "/sap/opu/odata/sap/YOUR_V2_SERVICE_SRV/",
+                "type": "OData",
+                "settings": { "odataVersion": "2.0" }
+            }
+            <% } else if (serviceType === 'ODataV4') { %>
+            "mainService": {
+                "uri": "/sap/opu/odata/sap/YOUR_V4_SERVICE_OD/",
+                "type": "OData",
+                "settings": { "odataVersion": "4.0" }
+            }
+            <% } %>
+        }
+    },
+    "sap.ui": {
+        "technology": "UI5",
+        "icons": {
+            "icon": "",
+            "favIcon": "",
+            "phone": "",
+            "phone@2": "",
+            "tablet": "",
+            "tablet@2": ""
+        },
+        "deviceTypes": {
+            "desktop": true,
+            "tablet": true,
+            "phone": true
+        }
+    },
+    "sap.ui5": {
+        "flexEnabled": true,
+		"rootView": {
+			"viewName": "<%= namespace %>.view.App",
+			"type": "XML",
+			"async": true,
+            "id": "App"
+		},
+        "dependencies": {
+            "minUI5Version": "1.30.0",
+            "libs": {
+				"sap.ui.core": {},
+				"sap.m": {},
+				"sap.f": {},
+				"sap.ui.layout": {},
+				"sap.collaboration": {},
+				"sap.ui.comp": {},
+				"sap.uxap": {},
+				"sap.ui.table": {}
+            }
+        },
+        "contentDensities": {
+            "compact": true,
+            "cozy": true
+        },
+        "models": {
+			"i18n": {
+				"type": "sap.ui.model.resource.ResourceModel",
+				"settings": {
+					"bundleName": "<%= namespace %>.i18n.i18n",
+					"supportedLocales": ["en", "tr"],
+					"fallbackLocale": "en",
+					"async": true
+				}
+			}
+            <% if (serviceType === 'ODataV2') { %>
+            ,
+            "oDataV2Model": {
+                "dataSource": "v2Service",
+                "preload": true,
+                "settings": {
+                    "defaultBindingMode": "TwoWay",
+                    "useBatch": true,
+                    "json": true
+                }
+            }
+            <% } else if (serviceType === 'ODataV4') { %>
+            "oDataV4Model": {
+                "dataSource": "v4Service",
+                "preload": true,
+                "settings": {
+                    "operationMode": "Server",
+                    "groupId": "$auto",
+                    "synchronizationMode": "None"
+                }
+            }
+            <% } %>
+        },
+        "resources": {
+            "css": [
+                <% if (serviceType === 'Rest') { %>
+                { "uri": "css/style.css" },
+                <% } %>
+                { "uri": "css/boostrap.css" }
+            ]
+        },
+        "routing": {
+			"config": {
+				"routerClass": "sap.m.routing.Router",
+				"viewType": "XML",
+				"async": true,
+				"viewPath": "<%= namespace %>.view",
+				"controlAggregation": "pages",
+				"controlId": "app",
+                "clearControlAggregation": false,
+				"bypassed": {
+				  "target": "notFound"
+				}
+			},
+            "routes": [
+                <% if (serviceType === 'Rest') { %>
+                {
+					"name": "Login",
+					"pattern": "",
+					"target": ["Login"]
+				},
+                {
+					"name": "Home",
+					"pattern": "Home",
+					"target": ["Home"],
+					"requiresAuth": true
+				},
+				{
+					"name": "Settings",
+					"pattern": "Settings",
+					"target": ["Settings"],
+					"requiresAuth": true
+				}
+                <% } else { %>
+				{
+					"name": "Home",
+					"pattern": "",
+					"target": ["Home"]
+				},
+				{
+					"name": "Settings",
+					"pattern": "Settings",
+					"target": ["Settings"]
+				}
+                <% } %>
+            ],
+            "targets": {
+                <% if (serviceType === 'Rest') { %>
+                "Login": {
+					"viewName": "Login",
+					"viewId": "Login",
+					"viewLevel": 1
+				},
+                <% } %>
+                "Main": {
+                    "viewId": "Main",
+                    "viewName": "Main"
+                },
+				"Home": {
+                    "parent": "Main",
+					"viewName": "Home",
+					"viewId": "Home",
+                    "viewPath": "<%= namespace %>.view",
+                    "controlId": "pageContainer",
+                    "controlAggregation": "pages",
+                    "title": "{i18n>homeTitle}"
+				},
+				"Settings": {
+                    "parent": "Main",
+					"viewName": "Settings",
+					"viewId": "Settings",
+                    "viewPath": "<%= namespace %>.view",
+                    "controlId": "pageContainer",
+                    "controlAggregation": "pages",
+                    "title": "{i18n>settingsTitle}"
+				},
+				"notFound": { 
+                    "viewName": "NotFound" 
+                }
+            }
+        }
+    }
+}

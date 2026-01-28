@@ -1,0 +1,44 @@
+<mvc:View
+    controllerName="<%= namespace %>.controller.Main"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:f="sap.f"
+    displayBlock="true"
+    xmlns:tnt="sap.tnt"
+    height="100%"
+    busyIndicatorDelay="0">
+    <tnt:ToolPage id="idToolPage" class="defaultTheme">
+        <tnt:header>
+            <f:ShellBar
+                id="idShellBar"
+                class="sapShellBar"
+                homeIcon="./img/logo/uisap_logo_amblemsiz.svg"
+                showMenuButton="true"
+                homeIconPressed="onShellBarHomeIconPressed"
+                menuButtonPressed="onShellBarMenuButtonPressed">
+            </f:ShellBar>
+        </tnt:header>
+        <tnt:sideContent>
+            <tnt:SideNavigation id="idMenuSideNavigation" class="menu"
+                selectedKey="InvoiceTrackReport"
+                expanded="false"
+                itemSelect="onSideNavigationItemSelect">
+                <tnt:NavigationList>
+                    <tnt:NavigationListItem key="Home" text="{i18n>menuItemHomePage}" icon="sap-icon://home" />
+                    <tnt:NavigationListItem key="Settings" text="{i18n>menuItemSettingsPage}" icon="sap-icon://process" />
+                </tnt:NavigationList>
+                <tnt:fixedItem>
+                    <tnt:NavigationList>
+                        <tnt:NavigationListItem key="logout" text="{i18n>menuItemLogout}"
+                            icon="sap-icon://log" />
+                    </tnt:NavigationList>
+                </tnt:fixedItem>
+            </tnt:SideNavigation>
+        </tnt:sideContent>
+        <tnt:mainContents>
+            <App
+                id="pageContainer"
+                class="app customTheme" />
+        </tnt:mainContents>
+    </tnt:ToolPage>
+</mvc:View>

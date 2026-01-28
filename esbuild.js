@@ -15,7 +15,7 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: 'dist/extension.js',
-    external: ['vscode'],
+    external: ['vscode', 'ejs'],
     logLevel: 'silent',
     plugins: [
       /* add plugins here */
