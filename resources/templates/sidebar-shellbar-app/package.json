@@ -1,29 +1,19 @@
 {
   "name": "<%= projectName %>",
   "version": "0.0.1",
-  "description": "Fiori App",
+  "description": "<%= appDescription %>",
   "scripts": {
-    "start": "ui5 serve --config=ui5.yaml --open \"index.html?sap-language=tr\"",
+    "dev": "ui5 serve --config=ui5.yaml --open \"index.html?sap-language=tr\"",
     "build": "ui5 build --all --clean-dest",
-    "start-dist": "ui5 serve --config ui5-dist.yaml -o \"/index.html?sap-language=tr\"",
-    "deploy": "npx nwabap upload"
+    "dev:dist": "ui5 serve --config ui5-dist.yaml -o \"/index.html?sap-language=tr\""
   },
   "devDependencies": {
-    "@sap-ux/eslint-plugin-fiori-tools": "^0.2",
-    "@sap/ux-specification": "UI5-1.136",
-    "@sap/ux-ui5-tooling": "1",
-    "@ui5/cli": "^3.0.0",
+    "@sap/ux-ui5-tooling": "^1.18.2",
+    "@ui5/cli": "^4.0.6",
     "@ui5/middleware-code-coverage": "^2.0.0",
-    "@ui5/linter": "latest",
     "globals": "^15.9.0",
-    "nwabap-ui5uploader": "^1.2.0",
     "ui5-middleware-livereload": "^3.0.3",
     "ui5-middleware-servestatic": "^3.3.1",
     "ui5-task-cachebuster-indexing": "^1.0.2"
-  },
-  "dependencies": {
-    "@ui5/webcomponents": "^2.14.0-rc.5",
-    "@ui5/webcomponents-fiori": "^2.14.0-rc.5",
-    "@ui5/webcomponents-icons": "^2.14.0-rc.5"
   }
 }

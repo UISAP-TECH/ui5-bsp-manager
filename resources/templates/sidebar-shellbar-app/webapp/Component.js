@@ -1,11 +1,8 @@
-<% if (serviceType === 'Rest') { %>
-sap.ui.define([
+<% if (serviceType === 'Rest') { %>sap.ui.define([
     "sap/ui/core/UIComponent",
-    "./model/models"
-    <% if (includeLogin) { %>
+    "./model/models"<% if (includeLogin) { %>
     ,"./service/SessionManager",
-    "./service/UserService"
-    <% } %>
+    "./service/UserService"<% } %>
 ], function (UIComponent, models<% if (includeLogin) { %>, SessionManager, UserService<% } %>) {
     "use strict";
 
@@ -44,13 +41,10 @@ sap.ui.define([
             localStorage.setItem("userLanguage", sLanguage);
 
             UIComponent.prototype.init.apply(this, arguments);
-
-            <% if (includeLogin) { %>
-            this._initializeApp(oUriParams);
+            <% if (includeLogin) { %>this._initializeApp(oUriParams);
             <% } else { %>
             this.setModel(models.createDeviceModel(), "device");
-            this.getRouter().initialize();
-            <% } %>
+            this.getRouter().initialize();<% } %>
         },
 
         <% if (includeLogin) { %>
@@ -106,15 +100,11 @@ sap.ui.define([
         <% } %>
     });
 });
-<% } else { %>
-sap.ui.define([
+<% } else { %>sap.ui.define([
     "sap/ui/core/UIComponent",
-    "<%= namespace %>/model/models"
-    <% if (serviceType === 'ODataV2') { %>
-    ,"<%= namespace %>/service/ODataV2Service"
-    <% } else if (serviceType === 'ODataV4') { %>
-    ,"<%= namespace %>/service/ODataV4Service"
-    <% } %>
+    "<%= namespace %>/model/models"<% if (serviceType === 'ODataV2') { %>
+    ,"<%= namespace %>/service/ODataV2Service"<% } else if (serviceType === 'ODataV4') { %>
+    ,"<%= namespace %>/service/ODataV4Service"<% } %>
 ], function (UIComponent, models<% if (serviceType === 'ODataV2') { %>, ODataV2Service<% } else if (serviceType === 'ODataV4') { %>, ODataV4Service<% } %>) {
     "use strict";
 
