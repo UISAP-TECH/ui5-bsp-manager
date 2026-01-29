@@ -405,7 +405,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             // Create SAPUI5 Project
             vscode.commands.registerCommand('bspManager.createProject', () => {
-                CreateProjectPanel.createOrShow(context.extensionUri);
+                CreateProjectPanel.createOrShow(context.extensionUri, configService);
             })
         ];
 

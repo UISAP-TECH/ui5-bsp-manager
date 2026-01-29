@@ -18,7 +18,11 @@ export interface ProjectConfig {
     description: string;
     serviceType: 'Rest' | 'ODataV2' | 'ODataV4';
     ui5Version: string;
+    theme: string;
     targetPath: string;
+    dataSourceType?: 'skip' | 'profile' | 'url';
+    profileName?: string;
+    serviceUrl?: string;
 }
 
 export interface UI5Version {
@@ -174,6 +178,7 @@ export class TemplateService {
             description: config.description,
             serviceType: config.serviceType,
             ui5Version: config.ui5Version,
+            theme: config.theme || 'sap_horizon',
             backendUrl: 'https://your-sap-server.com'
         };
 
