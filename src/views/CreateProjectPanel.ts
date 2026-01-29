@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { TemplateService, ProjectConfig } from '../services/TemplateService';
 import { ConfigService } from '../services/ConfigService';
 import { SapConnection } from '../services/SapConnection';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class CreateProjectPanel {
     public static currentPanel: CreateProjectPanel | undefined;
@@ -90,6 +92,15 @@ export class CreateProjectPanel {
                     case 'createProject':
                         await this._createProject(message.data);
                         break;
+                    case 'checkDirectory':
+                        try {
+                            const fullPath = path.join(message.targetPath, message.projectName);
+                            const exists = fs.existsSync(fullPath);
+                            this._panel.webview.postMessage({ command: 'directoryCheck', exists: exists });
+                        } catch (e) {
+                            this._panel.webview.postMessage({ command: 'directoryCheck', exists: false });
+                        }
+                        break;
                     case 'cancel':
                         this._panel.dispose();
                         break;
@@ -118,42 +129,27 @@ export class CreateProjectPanel {
 
             let services: { name: string; path: string; description?: string }[] = [];
 
-            if (serviceType === 'Rest') {
-                // For REST, we'll provide common /sap/bc paths
-                services = [
-                    { name: 'ADT Repository', path: '/sap/bc/adt/repository/objects', description: 'ABAP Development Tools' },
-                    { name: 'ADT Discovery', path: '/sap/bc/adt/discovery', description: 'ADT Service Discovery' },
-                    { name: 'BSP Applications', path: '/sap/bc/ui5_ui5/sap', description: 'BSP UI5 Applications' },
-                    { name: 'Custom REST', path: '/sap/bc/', description: 'Enter custom path' }
-                ];
-                this._panel.webview.postMessage({ command: 'services', data: services });
-            } else {
-                // For OData V2/V4, fetch from CATALOGSERVICE
-                const catalogVersion = serviceType === 'ODataV4' ? '0002' : '0001';
-                const catalogPath = `/sap/opu/odata/IWFND/CATALOGSERVICE;v=${catalogVersion}/ServiceCollection?sap-client=${profile.client}&$format=json`;
+            // For OData V2/V4, fetch from CATALOGSERVICE
+            const catalogVersion = serviceType === 'ODataV4' ? '4' : '2';
+            const catalogPath = `/sap/opu/odata/IWFND/CATALOGSERVICE;v=${catalogVersion}/ServiceCollection?sap-client=${profile.client}&$format=json`;
+            
+            try {
+                const response = await connection.get(catalogPath, {
+                    headers: { 'Accept': 'application/json' }
+                });
                 
-                try {
-                    const response = await connection.get(catalogPath, {
-                        headers: { 'Accept': 'application/json' }
-                    });
-                    
-                    if (response && response.d && response.d.results) {
-                        services = response.d.results.map((svc: any) => ({
-                            name: svc.Title || svc.TechnicalServiceName,
-                            path: svc.ServiceUrl || `/sap/opu/odata/sap/${svc.TechnicalServiceName}`,
-                            description: svc.Description || svc.TechnicalServiceName
-                        })).slice(0, 50); // Limit to 50 services
-                    }
-                    
-                    this._panel.webview.postMessage({ command: 'services', data: services });
-                } catch (error) {
-                    console.error('Failed to fetch OData services:', error);
-                    // Fallback: common OData services
-                    services = [
-                        { name: 'Enter Service URL', path: '', description: 'Manually enter the OData service URL' }
-                    ];
-                    this._panel.webview.postMessage({ command: 'services', data: services, error: 'Could not fetch services. Enter URL manually.' });
+                if (response && response.d && response.d.results) {
+                    services = response.d.results.map((svc: any) => ({
+                        name: svc.Title || svc.TechnicalServiceName,
+                        path: svc.ServiceUrl || `/sap/opu/odata/sap/${svc.TechnicalServiceName}`,
+                        description: svc.Description || svc.TechnicalServiceName
+                    })).slice(0, 1000); // Limit to 1000 services
                 }
+                
+                this._panel.webview.postMessage({ command: 'services', data: services });
+            } catch (error) {
+                console.error('Failed to fetch OData services:', error);
+                this._panel.webview.postMessage({ command: 'services', data: [], error: 'Could not fetch services. Check connection.' });
             }
         } catch (error) {
             console.error('Error fetching services:', error);
@@ -176,20 +172,25 @@ export class CreateProjectPanel {
 
             this._panel.webview.postMessage({ command: 'created', success: true });
             
+            // Auto-close panel after a short delay
+            setTimeout(() => {
+                this._panel.dispose();
+            }, 2000);
+
+            // Show Native VS Code Notification (Non-blocking or after dispose trigger)
             const projectPath = vscode.Uri.file(`${config.targetPath}/${config.projectName}`);
-            const action = await vscode.window.showInformationMessage(
+            vscode.window.showInformationMessage(
                 `Project "${config.projectName}" created successfully!`,
                 'Open in Current Window',
                 'Open in New Window'
-            );
+            ).then(async (action) => {
+                if (action === 'Open in Current Window') {
+                    await vscode.commands.executeCommand('vscode.openFolder', projectPath, false);
+                } else if (action === 'Open in New Window') {
+                    await vscode.commands.executeCommand('vscode.openFolder', projectPath, true);
+                }
+            });
 
-            if (action === 'Open in Current Window') {
-                await vscode.commands.executeCommand('vscode.openFolder', projectPath, false);
-            } else if (action === 'Open in New Window') {
-                await vscode.commands.executeCommand('vscode.openFolder', projectPath, true);
-            }
-
-            this._panel.dispose();
         } catch (error) {
             this._panel.webview.postMessage({ command: 'error', message: `${error}` });
         }
@@ -385,54 +386,74 @@ export class CreateProjectPanel {
         }
         .folder-btn:hover { background: rgba(255,255,255,0.05); border-color: var(--primary); }
 
+        /* Skip Checkbox */
+        .skip-checkbox {
+            display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+            border: 1px solid var(--border); border-radius: 8px;
+            cursor: pointer; margin-bottom: 16px; background: rgba(0,0,0,0.05);
+            font-size: 13px; color: var(--text);
+        }
+        .skip-checkbox:hover { border-color: var(--text-secondary); }
+        .skip-checkbox input { display: none; }
+        .skip-checkbox .checkmark {
+            width: 18px; height: 18px; border: 2px solid var(--border); border-radius: 4px;
+            position: relative; flex-shrink: 0; transition: all 0.2s;
+        }
+        .skip-checkbox input:checked + .checkmark { background: var(--primary); border-color: var(--primary); }
+        .skip-checkbox input:checked + .checkmark::after {
+            content: ''; position: absolute; left: 5px; top: 2px;
+            width: 5px; height: 9px; border: solid white; border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+
         /* Service Config */
-        .config-options { display: grid; gap: 12px; margin-bottom: 20px; }
-        .config-card {
-            padding: 16px; border: 1px solid var(--border); border-radius: 8px;
-            cursor: pointer; background: rgba(255,255,255,0.02);
-            display: flex; align-items: flex-start; gap: 12px; position: relative;
+        .service-config { animation: fadeIn 0.2s ease; }
+        .service-type-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .type-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+        .pill-toggle { display: flex; gap: 6px; }
+        .pill-btn {
+            padding: 8px 16px; border: 1px solid var(--border); border-radius: 20px;
+            background: transparent; color: var(--text); cursor: pointer;
+            font-size: 12px; font-weight: 600; transition: all 0.2s;
         }
-        .config-card:hover { background: rgba(255,255,255,0.05); border-color: var(--text-secondary); }
-        .config-card.selected { border-color: var(--primary); background: rgba(0, 120, 212, 0.08); }
-        .config-card.selected::before {
-            content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-            background: var(--primary); border-radius: 8px 0 0 8px;
-        }
-        .config-icon {
-            width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.1);
-            display: flex; align-items: center; justify-content: center; color: var(--text); flex-shrink: 0;
-        }
-        .config-card.selected .config-icon { background: var(--primary); color: white; }
-        .config-info h4 { margin: 0 0 4px 0; font-size: 13px; font-weight: 600; }
-        .config-info p { margin: 0; font-size: 11px; color: var(--text-secondary); line-height: 1.4; }
+        .pill-btn:hover { border-color: var(--primary); background: rgba(0, 120, 212, 0.05); }
+        .pill-btn.selected { background: var(--primary); border-color: var(--primary); color: white; }
 
-        /* Service Toggle */
-        .service-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 20px; }
-        .service-toggle-btn {
-            flex: 1; padding: 12px; border: none; background: transparent;
-            color: var(--text); cursor: pointer; font-size: 13px; font-weight: 600;
-            border-right: 1px solid var(--border);
-        }
-        .service-toggle-btn:last-child { border-right: none; }
-        .service-toggle-btn:hover { background: rgba(255,255,255,0.05); }
-        .service-toggle-btn.selected { background: var(--primary); color: white; }
+        /* Service Panels */
+        .service-panel { display: none; }
+        .service-panel.active { display: block; animation: fadeIn 0.2s ease; }
 
-        /* Config Panel */
-        .config-panel { display: none; margin-top: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.1); }
-        .config-panel.active { display: block; }
+        /* OData Source Toggle */
+        .odata-source-toggle { display: flex; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+        .source-btn {
+            flex: 1; padding: 10px; border: none; background: transparent;
+            color: var(--text); cursor: pointer; font-size: 12px; font-weight: 600;
+            border-right: 1px solid var(--border); transition: all 0.2s;
+        }
+        .source-btn:last-child { border-right: none; }
+        .source-btn:hover { background: rgba(255,255,255,0.05); }
+        .source-btn.selected { background: var(--primary); color: white; }
+        .odata-section { display: none; }
+        .odata-section.active { display: block; animation: fadeIn 0.15s ease; }
 
         /* Service List */
-        .service-list { margin-top: 16px; max-height: 200px; overflow-y: auto; }
+        .service-list { max-height: 180px; overflow-y: auto; }
         .service-item {
             padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px;
-            margin-bottom: 8px; cursor: pointer; background: rgba(0,0,0,0.1);
+            margin-bottom: 6px; cursor: pointer; background: rgba(0,0,0,0.05);
         }
         .service-item:hover { border-color: var(--primary); background: rgba(0, 120, 212, 0.05); }
         .service-item.selected { border-color: var(--primary); background: rgba(0, 120, 212, 0.1); }
-        .service-item h5 { margin: 0 0 2px 0; font-size: 13px; font-weight: 600; }
-        .service-item p { margin: 0; font-size: 11px; color: var(--text-secondary); }
-        .service-loading { text-align: center; padding: 20px; color: var(--text-secondary); font-size: 13px; }
-        .service-search { margin-bottom: 12px; position: relative; }
+        .service-item h5 { margin: 0 0 2px 0; font-size: 12px; font-weight: 600; }
+        .service-item p { margin: 0; font-size: 10px; color: var(--text-secondary); }
+        .service-loading { text-align: center; padding: 16px; color: var(--text-secondary); font-size: 12px; }
+        .spinner {
+            width: 16px; height: 16px; border: 2px solid var(--text-secondary);
+            border-top-color: var(--primary); border-radius: 50%;
+            animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .service-search { margin-bottom: 10px; position: relative; }
         .service-search input { width: 100%; padding: 10px 10px 10px 36px; }
         .service-search .search-icon { position: absolute; left: 12px; top: 10px; color: var(--text-secondary); }
 
@@ -576,70 +597,77 @@ export class CreateProjectPanel {
 
         <!-- Step 3: Service Configuration -->
         <div class="section" id="step3">
-            <div class="section-title">${iconServer} Service Configuration (Optional)</div>
+            <div class="section-title">${iconServer} Data Source (Optional)</div>
 
-            <div class="service-toggle">
-                <button type="button" class="service-toggle-btn selected" data-service="Rest">REST</button>
-                <button type="button" class="service-toggle-btn" data-service="ODataV2">OData V2</button>
-                <button type="button" class="service-toggle-btn" data-service="ODataV4">OData V4</button>
-            </div>
+            <!-- Skip Checkbox -->
+            <label class="skip-checkbox">
+                <input type="checkbox" id="skipService" checked>
+                <span class="checkmark"></span>
+                <span>Skip for now - configure later</span>
+            </label>
 
-            <div class="config-options">
-                <div class="config-card selected" data-config="skip">
-                    <div class="config-icon">${iconSkip}</div>
-                    <div class="config-info">
-                        <h4>Skip for Now</h4>
-                        <p>Configure later</p>
+            <!-- Service Config (hidden when skip is checked) -->
+            <div class="service-config" id="serviceConfig" style="display: none;">
+                <!-- Service Type Toggle -->
+                <div class="service-type-row">
+                    <span class="type-label">Type:</span>
+                    <div class="pill-toggle">
+                        <button type="button" class="pill-btn selected" data-service="Rest">REST</button>
+                        <button type="button" class="pill-btn" data-service="OData">OData</button>
                     </div>
                 </div>
-                <div class="config-card" data-config="profile">
-                    <div class="config-icon">${iconCloud}</div>
-                    <div class="config-info">
-                        <h4>Connect to SAP</h4>
-                        <p>Select profile & discover services</p>
-                    </div>
-                </div>
-                <div class="config-card" data-config="url">
-                    <div class="config-icon">${iconLink}</div>
-                    <div class="config-info">
-                        <h4>Enter URL</h4>
-                        <p>Manual service URL</p>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Profile Config -->
-            <div class="config-panel" id="profilePanel">
-                <div class="select-group" style="margin-bottom: 16px;">
-                    <div class="select-label">${iconServer} SAP Profile</div>
-                    <div class="custom-select" id="profileSelect">
-                        <div class="select-trigger" id="profileTrigger">
-                            <span id="profileText">Select profile...</span>
-                            <span class="arrow">${iconChevron}</span>
+                <!-- REST: Direct URL Input -->
+                <div id="restPanel" class="service-panel active">
+                    <div class="input-group" style="margin-bottom: 0;">
+                        <input type="text" id="restUrl" class="input-field" placeholder=" " style="padding-left: 14px;">
+                        <label class="floating-label" style="left: 14px;">Service URL (e.g. /sap/bc/...)</label>
+                        <div class="error-message" id="restUrlError">Required</div>
+                    </div>
+                </div>
+
+                <!-- OData: Profile Selection & Service Discovery -->
+                <div id="odataPanel" class="service-panel">
+                    <!-- OData Source Toggle -->
+                    <div class="odata-source-toggle">
+                        <button type="button" class="source-btn selected" data-source="profile">Discover from SAP</button>
+                        <button type="button" class="source-btn" data-source="manual">Enter URL</button>
+                    </div>
+
+                    <!-- Profile & Discovery -->
+                    <div id="odataProfileSection" class="odata-section active">
+                        <div class="select-group" style="margin-bottom: 12px;">
+                            <div class="select-label">${iconServer} SAP Profile</div>
+                            <div class="custom-select" id="profileSelect">
+                                <div class="select-trigger" id="profileTrigger">
+                                    <span id="profileText">Select profile...</span>
+                                    <span class="arrow">${iconChevron}</span>
+                                </div>
+                                <div class="select-options" id="profileOptions"></div>
+                            </div>
+                            <input type="hidden" id="profileName" value="">
+                            <div class="error-message" id="profileNameError">Please select a profile</div>
                         </div>
-                        <div class="select-options" id="profileOptions"></div>
+                        
+                        <div id="serviceSection" style="display: none;">
+                            <div class="service-search">
+                                <span class="search-icon">${iconSearch}</span>
+                                <input type="text" id="serviceSearch" class="input-field" placeholder="Search services..." style="padding-left: 36px;">
+                            </div>
+                            <div class="service-list" id="serviceList"></div>
+                            <div class="error-message" id="serviceListError">Please select a service</div>
+                        </div>
+                        <input type="hidden" id="selectedServicePath" value="">
                     </div>
-                    <input type="hidden" id="profileName" value="">
-                </div>
-                
-                <!-- Service Search & List -->
-                <div id="serviceSection" style="display: none;">
-                    <div class="service-search">
-                        <span class="search-icon">${iconSearch}</span>
-                        <input type="text" id="serviceSearch" class="input-field" placeholder="Search services..." style="padding-left: 36px;">
-                    </div>
-                    <div class="service-list" id="serviceList">
-                        <div class="service-loading">Select a profile to load services...</div>
-                    </div>
-                </div>
-                <input type="hidden" id="selectedServicePath" value="">
-            </div>
 
-            <!-- URL Config -->
-            <div class="config-panel" id="urlPanel">
-                <div class="input-group" style="margin-bottom: 0;">
-                    <input type="text" id="serviceUrl" class="input-field" placeholder=" " style="padding-left: 14px;">
-                    <label class="floating-label" style="left: 14px;">Service URL</label>
+                    <!-- Manual URL -->
+                    <div id="odataUrlSection" class="odata-section">
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <input type="text" id="odataUrl" class="input-field" placeholder=" " style="padding-left: 14px;">
+                            <label class="floating-label" style="left: 14px;">OData Service URL (e.g. /sap/opu/odata/...)</label>
+                            <div class="error-message" id="odataUrlError">Required</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -661,6 +689,15 @@ export class CreateProjectPanel {
         let selectedConfig = 'skip';
         let allServices = [];
         let profiles = [];
+        let projectExists = false;
+
+        function checkDirectory() {
+            const name = document.getElementById('projectName').value.trim();
+            const targetPath = document.getElementById('targetPath').value;
+            if (name && targetPath) {
+                vscode.postMessage({ command: 'checkDirectory', projectName: name, targetPath });
+            }
+        }
 
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
@@ -722,6 +759,10 @@ export class CreateProjectPanel {
                     hiddenInput.value = value;
                     text.textContent = label;
                     select.classList.remove('open');
+                    
+                    // Clear error if exists
+                    clearError(hiddenInputId, hiddenInputId + 'Error');
+                    
                     if (onSelect) onSelect(value);
                 }
             });
@@ -736,7 +777,7 @@ export class CreateProjectPanel {
         setupCustomSelect('profileSelect', 'profileTrigger', 'profileOptions', 'profileName', 'profileText', (profileName) => {
             if (profileName) {
                 document.getElementById('serviceSection').style.display = 'block';
-                document.getElementById('serviceList').innerHTML = '<div class="service-loading">Loading services...</div>';
+                document.getElementById('serviceList').innerHTML = '<div class="service-loading"><span class="spinner"></span>Loading services...</div>';
                 vscode.postMessage({ command: 'getServices', profileName, serviceType: selectedService });
             }
         });
@@ -765,6 +806,7 @@ export class CreateProjectPanel {
                     list.querySelectorAll('.service-item').forEach(i => i.classList.remove('selected'));
                     item.classList.add('selected');
                     document.getElementById('selectedServicePath').value = item.dataset.path;
+                    document.getElementById('serviceListError').classList.remove('show');
                 });
             });
         }
@@ -788,7 +830,9 @@ export class CreateProjectPanel {
             document.getElementById('nextBtn').querySelector('.btn-text').textContent = step === 3 ? 'Create Project' : 'Next';
 
             if (step === 2) vscode.postMessage({ command: 'getUI5Versions' });
-            if (step === 3) vscode.postMessage({ command: 'getProfiles' });
+            if (step === 3) {
+                vscode.postMessage({ command: 'getProfiles' });
+            }
         }
 
         // Template Selection
@@ -800,29 +844,33 @@ export class CreateProjectPanel {
             });
         });
 
-        // Service Type Toggle
-        document.querySelectorAll('.service-toggle-btn').forEach(btn => {
+        // Skip Checkbox
+        document.getElementById('skipService').addEventListener('change', function() {
+            const serviceConfig = document.getElementById('serviceConfig');
+            serviceConfig.style.display = this.checked ? 'none' : 'block';
+        });
+
+        // Pill Toggle (Service Type)
+        document.querySelectorAll('.pill-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.service-toggle-btn').forEach(b => b.classList.remove('selected'));
+                document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
                 selectedService = btn.dataset.service;
-                // Reload services if profile selected
-                const profileName = document.getElementById('profileName').value;
-                if (profileName && selectedConfig === 'profile') {
-                    document.getElementById('serviceList').innerHTML = '<div class="service-loading">Loading services...</div>';
-                    vscode.postMessage({ command: 'getServices', profileName, serviceType: selectedService });
-                }
+                
+                // Toggle panels
+                document.getElementById('restPanel').classList.toggle('active', selectedService === 'Rest');
+                document.getElementById('odataPanel').classList.toggle('active', selectedService === 'OData');
             });
         });
 
-        // Config Card Selection
-        document.querySelectorAll('.config-card').forEach(card => {
-            card.addEventListener('click', () => {
-                document.querySelectorAll('.config-card').forEach(c => c.classList.remove('selected'));
-                card.classList.add('selected');
-                selectedConfig = card.dataset.config;
-                document.getElementById('profilePanel').classList.toggle('active', selectedConfig === 'profile');
-                document.getElementById('urlPanel').classList.toggle('active', selectedConfig === 'url');
+        // OData Source Toggle (Profile/URL)
+        document.querySelectorAll('.source-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.source-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                const source = btn.dataset.source;
+                document.getElementById('odataProfileSection').classList.toggle('active', source === 'profile');
+                document.getElementById('odataUrlSection').classList.toggle('active', source === 'manual');
             });
         });
 
@@ -849,19 +897,70 @@ export class CreateProjectPanel {
                 const ui5Version = document.getElementById('ui5Version').value;
                 const targetPath = document.getElementById('targetPath').value;
                 
-                if (!name) { showError('projectName', 'projectNameError', 'Required'); hasError = true; }
+                if (!name) { showError('projectName', 'projectNameError', 'Project Name is required'); hasError = true; }
                 else if (!/^[a-z][a-z0-9-]*$/.test(name)) { showError('projectName', 'projectNameError', 'Lowercase, start with letter'); hasError = true; }
-                if (!ui5Version) { showError('ui5Version', 'ui5VersionError', 'Required'); hasError = true; }
-                if (!targetPath) { showError('targetPath', 'targetPathError', 'Required'); hasError = true; }
+                else if (projectExists) { showError('projectName', 'projectNameError', 'Project folder already exists'); hasError = true; }
+                if (!ui5Version) { showError('ui5Version', 'ui5VersionError', 'SAPUI5 Version is required'); hasError = true; }
+                if (!targetPath) { showError('targetPath', 'targetPathError', 'Target Location is required'); hasError = true; }
                 if (hasError) return;
                 updateStep(3);
             } else if (currentStep === 3) {
+                const skipService = document.getElementById('skipService').checked;
+                let hasError = false;
+                
+                // Validate service configuration if not skipped
+                if (!skipService) {
+                    if (selectedService === 'Rest') {
+                        const restUrl = document.getElementById('restUrl').value.trim();
+                        if (!restUrl) {
+                            showError('restUrl', 'restUrlError', 'Service URL is required');
+                            hasError = true;
+                        }
+                    } else if (selectedService === 'OData') {
+                        const profileSelected = document.querySelector('.source-btn[data-source="profile"]').classList.contains('selected');
+                        if (profileSelected) {
+                            const profileName = document.getElementById('profileName').value;
+                            if (!profileName) {
+                                showError('profileName', 'profileNameError', 'Please select a profile');
+                                hasError = true;
+                            } else {
+                                const selectedPath = document.getElementById('selectedServicePath').value;
+                                if (!selectedPath) {
+                                    document.getElementById('serviceListError').classList.add('show');
+                                    hasError = true;
+                                }
+                            }
+                        } else {
+                            const odataUrl = document.getElementById('odataUrl').value.trim();
+                            if (!odataUrl) {
+                                showError('odataUrl', 'odataUrlError', 'OData Service URL is required');
+                                hasError = true;
+                            }
+                        }
+                    }
+                }
+                
+                if (hasError) return;
+
                 const name = document.getElementById('projectName').value.trim();
                 const ns = document.getElementById('namespace').value.trim();
 
                 const nextBtn = document.getElementById('nextBtn');
                 nextBtn.classList.add('loading');
                 nextBtn.disabled = true;
+
+                // Determine final service URL
+                let finalServiceUrl = '';
+                if (!skipService) {
+                    if (selectedService === 'Rest') {
+                        finalServiceUrl = document.getElementById('restUrl').value.trim();
+                    } else {
+                        const profileSelected = document.querySelector('.source-btn[data-source="profile"]').classList.contains('selected');
+                        finalServiceUrl = profileSelected 
+                            ? document.getElementById('selectedServicePath').value 
+                            : document.getElementById('odataUrl').value.trim();
+                    }
+                }
 
                 vscode.postMessage({
                     command: 'createProject',
@@ -870,19 +969,29 @@ export class CreateProjectPanel {
                         projectName: name,
                         namespace: ns || name.replace(/-/g, '.'),
                         description: document.getElementById('description').value.trim() || 'SAPUI5 Application',
-                        serviceType: selectedService,
+                        serviceType: skipService ? '' : selectedService,
                         ui5Version: document.getElementById('ui5Version').value,
                         theme: document.getElementById('theme').value,
                         targetPath: document.getElementById('targetPath').value,
-                        dataSourceType: selectedConfig,
-                        profileName: selectedConfig === 'profile' ? document.getElementById('profileName').value : '',
-                        serviceUrl: selectedConfig === 'url' ? document.getElementById('serviceUrl').value : (selectedConfig === 'profile' ? document.getElementById('selectedServicePath').value : '')
+                        profileName: (!skipService && selectedService === 'OData' && document.querySelector('.source-btn[data-source="profile"]').classList.contains('selected')) 
+                            ? document.getElementById('profileName').value : '',
+                        serviceUrl: finalServiceUrl
                     }
                 });
             }
         });
 
-        window.addEventListener('message', (event) => {
+        // Clear errors on input
+        document.getElementById('restUrl').addEventListener('input', () => clearError('restUrl', 'restUrlError'));
+        document.getElementById('restUrl').addEventListener('input', () => clearError('restUrl', 'restUrlError'));
+        document.getElementById('odataUrl').addEventListener('input', () => clearError('odataUrl', 'odataUrlError'));
+        document.getElementById('projectName').addEventListener('input', () => {
+             clearError('projectName', 'projectNameError');
+             checkDirectory();
+        });
+        
+        // Clear service selection error when a service is selected (this will be handled in service selection logic)
+         window.addEventListener('message', (event) => {
             const message = event.data;
             switch (message.command) {
                 case 'ui5Versions':
@@ -916,9 +1025,22 @@ export class CreateProjectPanel {
                 case 'folderSelected':
                     document.getElementById('targetPath').value = message.path;
                     clearError('targetPath', 'targetPathError');
+                    checkDirectory();
+                    break;
+                case 'directoryCheck':
+                    if (message.exists) {
+                        showError('projectName', 'projectNameError', 'Project folder already exists');
+                        projectExists = true;
+                    } else {
+                        const name = document.getElementById('projectName').value.trim();
+                        if (/^[a-z][a-z0-9-]*$/.test(name)) {
+                            clearError('projectName', 'projectNameError');
+                        }
+                        projectExists = false;
+                    }
                     break;
                 case 'created':
-                    showToast('Project created!', 'success');
+                    // Toast removed on user request
                     break;
                 case 'error':
                     document.getElementById('nextBtn').classList.remove('loading');
