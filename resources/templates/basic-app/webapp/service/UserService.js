@@ -1,7 +1,7 @@
 /**
  * @namespace <%= namespace %>.service
  * @name <%= namespace %>.service.UserService
- * @description Kullanıcı işlemleri (login, logout, profil bilgileri vb.) için servis.
+ * @description User operations (login, logout, profile information, etc.) service.
  */
 sap.ui.define(
   ["./RestService", "./SessionManager"],
@@ -14,15 +14,10 @@ sap.ui.define(
 
     return {
       /**
-       * Kullanıcıyı sisteme dahil etmek için login isteği gönderir.
-       * Bu fonksiyon, önce Basic Authentication için kimlik bilgilerini set eder,
-       * ardından login isteğini gönderir. Başarılı olursa, sunucudan gelen
-       * Bearer token'ı RestService'e kaydeder ve kullanıcı bilgilerini döndürür.
-       *
-       * @param {string} sUsername Kullanıcı adı
-       * @param {string} sPassword Şifre
-       * @returns {Promise<object>} Başarılı olduğunda kullanıcı verilerini içeren bir Promise.
-       * Hata durumunda hata nesnesi ile reject olur.
+       * @brief Logs in the user.
+       * @param {string} sUsername The username.
+       * @param {string} sPassword The password.
+       * @returns {Promise<{user: object, token: string}>} A Promise that resolves with the user data if the login is successful.
        */
       login: async function (sUsername, sPassword) {
         RestService.setCredentials(sUsername, sPassword);
@@ -33,10 +28,10 @@ sap.ui.define(
 
           if (sToken && oUserData) {
             SessionManager.login(oUserData, sToken);
-            return oUserData;
+            return { user: oUserData, token: sToken };
           } else {
             throw new Error(
-              "Sunucudan yetki anahtarı (token) veya kullanıcı verisi alınamadı."
+              "The authorization key (token) or user data could not be obtained from the server."
             );
           }
         } catch (oError) {
@@ -46,44 +41,36 @@ sap.ui.define(
       },
 
       /**
-       * @brief YENİ: URL'den gelen token'ı doğrulamak ve kullanıcı bilgilerini almak için kullanılır.
-       * @param {string} sToken URL'den gelen token.
-       * @returns {Promise<object>} Başarılı ise {user, token} nesnesi içeren bir Promise.
+       * @brief Validates the token and returns the user data.
+       * @param {string} sToken The token.
+       * @returns {Promise<{user: object, token: string}>} A Promise that resolves with the user data if the token is valid.
        */
       validateToken: async function (sToken) {
-        // Önce token'ı RestService'e set et ki, sonraki istek bu token ile gitsin.
         RestService.setAuthToken(sToken);
         try {
-          // Backend'deki yeni endpoint'i çağırıyoruz.
-          const oResponse = await RestService.post("/auth/validate", {}); // veya GET
+          const oResponse = await RestService.post("/auth/validate", {});
           const oUserData = oResponse.es_user_data;
 
           if (oUserData) {
-            // Oturumu bu bilgilerle başlat
             SessionManager.login(oUserData, sToken);
             return { user: oUserData, token: sToken };
           } else {
             throw new Error(
-              "Token doğrulama başarısız veya kullanıcı verisi alınamadı."
+              "Token validation failed or user data could not be obtained."
             );
           }
         } catch (oError) {
-          SessionManager.logout(); // Başarısız olursa oturumu temizle
+          SessionManager.logout();
           throw oError;
         }
       },
 
       /**
-       * Kullanıcının oturumunu sonlandırır.
-       * Lokaldeki token'ı temizler ve sunucudaki oturumu sonlandırmak için istek gönderir.
-       * @returns {Promise}
+       * @brief Logs out the user.
+       * @returns {Promise<void>} A Promise that resolves when the logout is complete.
        */
       logout: async function () {
-        // DEĞİŞTİ: Oturumu sonlandırma işini SessionManager'a devret
         SessionManager.logout();
-
-        // Backend'de token'ı geçersiz kılan bir endpoint varsa yine çağrılabilir.
-        // return RestService.post("/auth/logout", {});
       },
     };
   }

@@ -1,3 +1,8 @@
+/**
+ * @namespace <%= namespace %>.service
+ * @name <%= namespace %>.service.ODataV4Service
+ * @description OData V4 service for making AJAX requests to the server.
+ */
 sap.ui.define([
   "sap/ui/base/Object",
   "sap/m/MessageBox"

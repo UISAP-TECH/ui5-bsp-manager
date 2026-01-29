@@ -1,6 +1,7 @@
 /**
  * @namespace <%= namespace %>.service
  * @name <%= namespace %>.service.RestService
+ * @description REST service for making AJAX requests to the server.
  */
 sap.ui.define([], function () {
   "use strict";
@@ -14,37 +15,48 @@ sap.ui.define([], function () {
   let _password = null;
 
   return {
-    // YENİ: Token'ı dışarıdan set etmek için public bir fonksiyon.
-    // Login işlemi başarılı olduğunda bu fonksiyon çağrılır.
+    /**
+     * @brief A function that sets the authentication token.
+     * Called when the login process is successful.
+     * @param {string} sNewToken - The new authentication token.
+     */
     setAuthToken: function (sNewToken) {
       _sToken = sNewToken;
     },
 
-    // YENİ: Token'ı temizlemek için public bir fonksiyon.
-    // Logout işlemi sırasında bu fonksiyon çağrılır.
+    /**
+     * @brief A function that clears the authentication token.
+     * Called when the logout process is successful.
+     */
     clearAuthToken: function () {
       _sToken = null;
     },
 
-    // YENİ: Kimlik bilgilerini (credentials) dışarıdan set etmek için public bir fonksiyon.
-    // Login ekranında kullanıcı bilgileri girince bu fonksiyon çağrılır.
+    /**
+     * @brief A function that sets the username and password.
+     * Called when the login process is successful.
+     * @param {string} sUsername - The username.
+     * @param {string} sPassword - The password.
+     */
     setCredentials: function (sUsername, sPassword) {
       _username = sUsername;
       _password = sPassword;
     },
 
-    // YENİ: Kimlik bilgilerini temizlemek için public bir fonksiyon.
-    // Logout işlemi sırasında bu fonksiyon çağrılır.
+    /**
+     * @brief A function that clears the username and password.
+     * Called when the logout process is successful.
+     */
     clearCredentials: function () {
       _username = null;
       _password = null;
     },
 
     /**
-     * es_return yapısını kontrol eder ve hata varsa hata nesnesi döndürür.
-     * @param {object} oResponse Servis yanıtı
-     * @param {string} sEndpoint Endpoint adı (hata mesajı için)
-     * @returns {Array} Hata mesajları dizisi
+     * @brief A function that checks the es_return structure and returns an error object if an error is found.
+     * @param {object} oResponse The service response.
+     * @param {string} sEndpoint The endpoint name (for error message).
+     * @returns {Array} An array of error messages.
      * @private
      */
     _checkEsReturn: function (oResponse, sEndpoint) {
@@ -55,19 +67,19 @@ sap.ui.define([], function () {
             if (oResponse?.es_return?.type === "E") {
               aErrors.push({
                 type: "Error",
-                title: `Hata: ${sEndpoint}`,
-                description: oItem.message || "Bilinmeyen bir hata oluştu.",
-                subtitle: "Lütfen sistem yöneticisi ile iletişime geçin.",
+                title: `Error: ${sEndpoint}`,
+                description: oItem.message || "An unknown error occurred.",
+                subtitle: "Please contact the system administrator.",
               });
             }
           });
         } else {
           aErrors.push({
             type: "Error",
-            title: `Hata: ${sEndpoint}`,
+            title: `Error: ${sEndpoint}`,
             description:
-              oResponse.es_return.message || "Bilinmeyen bir hata oluştu.",
-            subtitle: "Lütfen sistem yöneticisi ile iletişime geçin.",
+              oResponse.es_return.message || "An unknown error occurred.",
+            subtitle: "Please contact the system administrator.",
           });
         }
       }
@@ -76,42 +88,37 @@ sap.ui.define([], function () {
     },
 
     /**
-     * Tüm AJAX istekleri için merkezi fonksiyon.
-     * @param {string} sEndpoint Çağrılacak API endpoint'i (örn: "/materials")
-     * @param {string} sMethod HTTP metodu (GET, POST, PUT, DELETE)
-     * @param {object} oData Gönderilecek veri
+     * @brief A function that makes an AJAX request to the server.
+     * @param {string} sEndpoint The endpoint name (for error message).
+     * @param {string} sMethod HTTP method (GET, POST, PUT, DELETE)
+     * @param {object} oData Data to send
      * @returns {Promise}
      * @private
      */
     _ajaxRequest: function (sEndpoint, sMethod, oData = {}, async = true) {
       const _this = this;
       return new Promise((resolve, reject) => {
-        // YENİ: Her istek için bir başlık (headers) nesnesi oluşturuluyor.
         const oHeaders = {};
 
-        // YENİ: Eğer bir token set edilmişse, onu 'Authorization' başlığı olarak ekle.
         if (_sToken) {
           // oHeaders.Authorization = "Bearer " + _sToken;
         }
 
-        // Eğer kullanıcı adı ve şifre set edilmişse, Basic Auth başlığını oluştur.
         if (_username && _password) {
-          const sCredentials = `${_username}:${_password}`; // "kullaniciadi:sifre" formatı
-          const sEncodedCredentials = btoa(sCredentials); // btoa() ile Base64 kodlama
+          const sCredentials = `${_username}:${_password}`;
+          const sEncodedCredentials = btoa(sCredentials);
           oHeaders.Authorization = "Basic " + sEncodedCredentials;
         }
 
         $.ajax({
-          // 3. DEĞİŞİKLİK: URL'i doğrudan 'models' modülünden alıyoruz.
-          url: sEndpoint, // models.getBaseUrl() metodunuzun adını kendi kodunuza göre düzenleyin.
-          headers: oHeaders, // DEĞİŞTİ: Başlıklar ajax çağrısına ekleniyor.
+          url: sEndpoint,
+          headers: oHeaders,
           method: sMethod,
           data: sMethod !== "GET" ? JSON.stringify(oData) : null,
           dataType: "json",
           contentType: "application/json",
           async: async,
           success: function (response) {
-            // es_return kontrolü
             const aErrors = _this._checkEsReturn(response, sEndpoint);
             if (aErrors.length > 0) {
               reject({ messages: aErrors });
@@ -122,8 +129,7 @@ sap.ui.define([], function () {
           error: function (oError) {
             const oErrorInfo = {
               status: oError.status,
-              message:
-                oError.responseText || "İstek sırasında bir hata oluştu.",
+              message: oError.responseText || "An unknown error occurred.",
               response: oError.responseJSON || oError.responseText,
             };
             reject(oErrorInfo);
@@ -133,7 +139,7 @@ sap.ui.define([], function () {
     },
 
     /**
-     * GET isteği gönderir.
+     * @brief A function that sends a GET request.
      * @param {string} sEndpoint
      * @returns {Promise}
      */
@@ -142,7 +148,7 @@ sap.ui.define([], function () {
     },
 
     /**
-     * POST isteği gönderir.
+     * @brief A function that sends a POST request.
      * @param {string} sEndpoint
      * @param {object} oData
      * @returns {Promise}
@@ -152,7 +158,7 @@ sap.ui.define([], function () {
     },
 
     /**
-     * PUT isteği gönderir.
+     * @brief A function that sends a PUT request.
      * @param {string} sEndpoint
      * @param {object} oData
      * @returns {Promise}
@@ -162,7 +168,7 @@ sap.ui.define([], function () {
     },
 
     /**
-     * DELETE isteği gönderir.
+     * @brief A function that sends a DELETE request.
      * @param {string} sEndpoint
      * @returns {Promise}
      */

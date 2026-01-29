@@ -3,14 +3,14 @@
 	<Page showHeader="false" class="backdrop h-100">
 		<content>
 			<FlexBox width="100%" class="h-100" direction="Column">
-				<!-- Müşteri Logosu Gelecek-->
+				<!-- Customer Logo will come-->
 				<Image src="./img/logo/logo-dark.png" class="LogoCon" width="150px" press="onNavigateToClientCompany"/>
 				<FlexBox width="100%" alignItems="Center" justifyContent="Center" class="login-bg">
 					<FlexBox class="ma-2 login-card glass">
 						<VBox class="bg-primary">
 							<FlexBox alignContent="Center" alignItems="Center"
                                 justifyContent="Center" class="my-12">
-								<!-- Müşteri Logosu Gelecek-->
+								<!-- Customer Logo will come-->
                                 <Image src="./img/logo/logo-dark.png" class="mt-2"
                                     width="150px" />
                             </FlexBox>
@@ -32,7 +32,7 @@
 					</FlexBox>
 				</FlexBox>
 			</FlexBox>
-			<!-- Şirket Logomuz Gelecek-->
+			<!-- Our Company Logo will come-->
 			<Image press="onNavigateToOurCompany" src="./img/logo/uisap_logo_amblemsiz.svg" class="UISAPLogoCon" width="150px"/>
 		</content>
 	</Page>

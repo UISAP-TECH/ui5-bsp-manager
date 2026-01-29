@@ -611,9 +611,9 @@ export class CreateProjectPanel {
                 <!-- Service Type Toggle -->
                 <div class="service-type-row">
                     <span class="type-label">Type:</span>
-                    <div class="pill-toggle">
-                        <button type="button" class="pill-btn selected" data-service="Rest">REST</button>
-                        <button type="button" class="pill-btn" data-service="OData">OData</button>
+                    <div class="pill-toggle" id="serviceTypeToggle">
+                        <button type="button" class="pill-btn selected" data-value="Rest">REST API</button>
+                        <button type="button" class="pill-btn" data-value="ODataV2">OData Service</button>
                     </div>
                 </div>
 
@@ -855,11 +855,11 @@ export class CreateProjectPanel {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
-                selectedService = btn.dataset.service;
+                selectedService = btn.dataset.value;
                 
                 // Toggle panels
                 document.getElementById('restPanel').classList.toggle('active', selectedService === 'Rest');
-                document.getElementById('odataPanel').classList.toggle('active', selectedService === 'OData');
+                document.getElementById('odataPanel').classList.toggle('active', selectedService === 'ODataV2');
             });
         });
 
@@ -916,7 +916,7 @@ export class CreateProjectPanel {
                             showError('restUrl', 'restUrlError', 'Service URL is required');
                             hasError = true;
                         }
-                    } else if (selectedService === 'OData') {
+                    } else if (selectedService === 'ODataV2') {
                         const profileSelected = document.querySelector('.source-btn[data-source="profile"]').classList.contains('selected');
                         if (profileSelected) {
                             const profileName = document.getElementById('profileName').value;
@@ -973,7 +973,7 @@ export class CreateProjectPanel {
                         ui5Version: document.getElementById('ui5Version').value,
                         theme: document.getElementById('theme').value,
                         targetPath: document.getElementById('targetPath').value,
-                        profileName: (!skipService && selectedService === 'OData' && document.querySelector('.source-btn[data-source="profile"]').classList.contains('selected')) 
+                        profileName: (!skipService && selectedService === 'ODataV2' && document.querySelector('.source-btn[data-source="profile"]').classList.contains('selected')) 
                             ? document.getElementById('profileName').value : '',
                         serviceUrl: finalServiceUrl
                     }

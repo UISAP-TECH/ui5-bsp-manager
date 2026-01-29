@@ -179,7 +179,8 @@ export class TemplateService {
             serviceType: config.serviceType,
             ui5Version: config.ui5Version,
             theme: config.theme || 'sap_horizon',
-            backendUrl: 'https://your-sap-server.com'
+            backendUrl: 'https://your-sap-server.com',
+            includeLogin: config.serviceType === 'Rest' ? false : true // Temporarily disable login for Rest
         };
 
         await this.processDirectory(templatePath, projectPath, templateData, progress);
@@ -201,19 +202,78 @@ export class TemplateService {
     private async processDirectory(
         sourcePath: string,
         targetPath: string,
-        data: Record<string, string>,
+        data: Record<string, any>, // Changed to any to support boolean includeLogin
         progress: vscode.Progress<{ message?: string; increment?: number }>
     ): Promise<void> {
         const entries = fs.readdirSync(sourcePath, { withFileTypes: true });
 
         for (const entry of entries) {
-            const sourceFile = path.join(sourcePath, entry.name);
-            const targetFile = path.join(targetPath, entry.name);
+            const entryName = entry.name;
+            const sourceFile = path.join(sourcePath, entryName);
+            const targetFile = path.join(targetPath, entryName);
+            const parentDir = path.basename(sourcePath);
+
+            // 1. Conditional Filtering
+            if (data.serviceType === 'Rest') {
+                if (!data.includeLogin) {
+                    const isLoginView = entryName === 'Login.view.xml';
+                    const isLoginController = entryName === 'Login.controller.js';
+                    if (isLoginView || isLoginController) {
+                        continue;
+                    }
+                }
+            } else {
+                 // Not Rest - filter Rest specific files
+                 const isRestCss = parentDir === 'css' && entryName === 'style.css';
+                 const isRestBg = parentDir === 'backgrounds' && entryName === 'bg.png';
+                 if (isRestCss || isRestBg) {
+                     continue;
+                 }
+            }
 
             if (entry.isDirectory()) {
+                // 2. Service Directory Logic
+                if (entryName === 'service') {
+                    // If no service type is selected (Skip), do not create service folder
+                    if (!data.serviceType) {
+                        continue;
+                    }
+
+                    // Create service directory
+                    fs.mkdirSync(targetFile, { recursive: true });
+
+                    // Determine which files to copy
+                    const serviceFilesToCopy: string[] = [];
+                    if (data.serviceType === 'Rest') {
+                        serviceFilesToCopy.push('RestService.js');
+                        if (data.includeLogin) {
+                            serviceFilesToCopy.push('UserService.js', 'SessionManager.js');
+                        }
+                    } else if (data.serviceType === 'OData' || data.serviceType === 'ODataV2') {
+                        serviceFilesToCopy.push('ODataV2Service.js');
+                    } else if (data.serviceType === 'ODataV4') {
+                        serviceFilesToCopy.push('ODataV4Service.js');
+                    }
+
+                    // Copy selected files manually
+                    for (const sFile of serviceFilesToCopy) {
+                        const sSource = path.join(sourceFile, sFile);
+                        const sTarget = path.join(targetFile, sFile);
+                        if (fs.existsSync(sSource)) {
+                             await this.processFile(sSource, sTarget, data);
+                        }
+                    }
+
+                    // Do not recurse into service directory since we handled it manually
+                    continue;
+                }
+
+                // Normal Directory Recursion
                 fs.mkdirSync(targetFile, { recursive: true });
                 await this.processDirectory(sourceFile, targetFile, data, progress);
+
             } else {
+                // Regular File Processing
                 await this.processFile(sourceFile, targetFile, data);
             }
         }

@@ -1,3 +1,8 @@
+/**
+ * @namespace <%= namespace %>.service
+ * @name <%= namespace %>.service.ODataV2Service
+ * @description OData V2 service for making AJAX requests to the server.
+ */
 sap.ui.define([
   "sap/ui/base/Object"
 ], function (BaseObject) {

@@ -7,8 +7,8 @@ sap.ui.define(["sap/ui/core/mvc/Controller"], function (Controller) {
 
   return Controller.extend("<%= namespace %>.controller.NotFound", {
     /**
-     * @brief Controller ilk yüklendiğinde bir kez çalışır.
-     * Olay dinleyicilerini ve sabit referansları tanımlamak için kullanılır.
+     * @brief A function that runs once when the controller is loaded.
+     * Used to define event listeners and constant references.
      */
     onInit: function () {},
   });

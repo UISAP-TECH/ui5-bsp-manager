@@ -1,14 +1,14 @@
 /**
  * @namespace <%= namespace %>.service
  * @name <%= namespace %>.service.SessionManager
- * @description Oturum yönetimi için merkezi servis.
- * Hem tarayıcı deposunu (sessionStorage) hem de global UI5 modelini yönetir.
+ * @description Session management service.
+ * Manages the browser storage (sessionStorage) and the global UI5 model.
  */
 sap.ui.define(
   [
     "sap/ui/util/Storage",
     "sap/ui/model/json/JSONModel",
-    "./RestService", // Token'ı set etmek için RestService'e de ihtiyacımız var
+    "./RestService",
   ],
   function (Storage, JSONModel, RestService) {
     "use strict";
@@ -17,56 +17,48 @@ sap.ui.define(
     /*                                           global sap                                           */
     /* ---------------------------------------------------------------------------------------------- */
 
-    // Private değişkenler (dışarıdan erişilemez)
     let _oSessionModel;
-    // Yeni pencerede oturum aç işlemi yoksa "local" yerine "session" yazılacak
-    const _oStorage = new Storage(Storage.Type.local, "<%= namespace %>_session"); // Projeye özel bir anahtar
+    const _oStorage = new Storage(Storage.Type.local, "<%= namespace %>_session");
 
-    // Bu servis, bir singleton gibi çalışacak ve public fonksiyonları döndürecek.
     const SessionManager = {
       /**
-       * Uygulama ilk açıldığında Component.js tarafından çağrılmalıdır.
-       * Tarayıcı deposundaki eski oturumu kontrol eder ve session modelini başlatır.
-       * @param {sap.ui.core.UIComponent} oComponent Uygulamanın ana bileşeni
+       * @brief Initializes the session manager.
+       * @param {sap.ui.core.UIComponent} oComponent The component instance.
        */
       init: function (oComponent) {
         const oInitialData = {
           isAuthenticated: false,
           token: null,
-          user: null, // Kullanıcı adı, tam adı, rolleri vb. bilgileri burada tutabiliriz
+          user: null,
         };
         _oSessionModel = new JSONModel(oInitialData);
         oComponent.setModel(_oSessionModel, "session");
 
-        // 2. Tarayıcı deposunda kayıtlı bir oturum var mı diye kontrol et
         const sStoredData = _oStorage.get("sessionData");
         if (sStoredData) {
           try {
             const oStoredData = JSON.parse(sStoredData);
             if (oStoredData.token && oStoredData.user) {
-              // Kayıtlı oturum geçerliyse, modeli ve RestService'i güncelle.
               this._updateSessionState(oStoredData.user, oStoredData.token);
             }
           } catch (e) {
             console.error(
-              "SessionManager: Depodaki oturum verisi okunamadı.",
+              "SessionManager: Session data in the repository could not be read.",
               e
             );
-            this.logout(); // Bozuk veriyi temizle
+            this.logout();
           }
         }
       },
 
       /**
-       * Başarılı bir login işleminden sonra UserService tarafından çağrılır.
-       * @param {object} oUserData Sunucudan gelen kullanıcı verileri
-       * @param {string} sToken Sunucudan gelen JWT veya session token
+       * @brief Logs in the user.
+       * @param {object} oUserData The user data received from the server.
+       * @param {string} sToken The JWT or session token received from the server.
        */
       login: function (oUserData, sToken) {
-        // Hem modeli hem de depoyu güncelle
         this._updateSessionState(oUserData, sToken);
 
-        // Kalıcı olması için veriyi JSON string olarak tarayıcı deposuna kaydet
         const sDataToStore = JSON.stringify({
           user: oUserData,
           token: sToken,
@@ -75,27 +67,24 @@ sap.ui.define(
       },
 
       /**
-       * Logout işlemi sırasında UserService tarafından çağrılır.
+       * @brief Logs out the user.
        */
       logout: function () {
-        // Modeli başlangıç değerlerine döndür
         _oSessionModel.setData({
           isAuthenticated: false,
           token: null,
           user: null,
         });
 
-        // RestService'deki token ve kimlik bilgilerini temizle
         RestService.clearAuthToken();
         RestService.clearCredentials();
 
-        // Tarayıcı deposundaki oturum verisini sil
         _oStorage.remove("sessionData");
         console.log("SessionManager: Oturum başarıyla sonlandırıldı.");
       },
 
       /**
-       * Global session modelini döndürür.
+       * @brief Returns the global session model.
        * @returns {sap.ui.model.json.JSONModel}
        */
       getSessionModel: function () {
@@ -103,7 +92,7 @@ sap.ui.define(
       },
 
       /**
-       * Oturumun geçerli olup olmadığını kontrol eder.
+       * @brief Checks if the user is authenticated.
        * @returns {boolean}
        */
       isAuthenticated: function () {
@@ -111,7 +100,7 @@ sap.ui.define(
       },
 
       /**
-       * Mevcut oturum token'ını döndürür.
+       * @brief Returns the current session token.
        * @returns {string|null}
        */
       getToken: function () {
@@ -119,18 +108,16 @@ sap.ui.define(
       },
 
       /**
-       * Session state'ini güncelleyen özel yardımcı fonksiyon
+       * @brief Updates the session state.
        * @private
        */
       _updateSessionState: function (oUser, sToken) {
-        // Session modelini güncelle (Bu, tüm UI'ı otomatik olarak güncelleyecektir)
         _oSessionModel.setData({
           isAuthenticated: true,
           token: sToken,
           user: oUser,
         });
 
-        // Sonraki istekler için RestService'e token'ı set et
         RestService.setAuthToken(sToken);
       },
     };

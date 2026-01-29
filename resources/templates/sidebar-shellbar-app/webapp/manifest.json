@@ -9,34 +9,37 @@
         },
         "title": "{{appTitle}}",
         "description": "{{appDescription}}",
-        "resources": "resources.json",
 		"sourceTemplate": {
 			"id": "basic_app",
 			"version": "1.0.0"
-		},
-        "dataSources": {
-			<% if (serviceType === 'Rest') { %>
+		},<% if (serviceType === 'Rest' || serviceType === 'ODataV2' || serviceType === 'ODataV4') { %>
+        "dataSources": {<% if (serviceType === 'Rest') { %>
             "mainServiceAPI": {
 				"uri": "/sap/bc/your_rest_api/",
 				"type": "JSON",
 				"settings": {
 					"sapClient": "100"
 				}
-			}
-            <% } else if (serviceType === 'ODataV2') { %>
+			},
+			"ourCompanyHomepage": {
+				"uri": "https://ourcompany.com.tr",
+				"type": "JSON"
+			},
+			"clientCompanyHomepage": {
+				"uri": "https://clientcompany.com.tr",
+				"type": "JSON"
+			}<% } else if (serviceType === 'ODataV2') { %>
             "mainService": {
                 "uri": "/sap/opu/odata/sap/YOUR_V2_SERVICE_SRV/",
                 "type": "OData",
                 "settings": { "odataVersion": "2.0" }
-            }
-            <% } else if (serviceType === 'ODataV4') { %>
+            }<% } else if (serviceType === 'ODataV4') { %>
             "mainService": {
                 "uri": "/sap/opu/odata/sap/YOUR_V4_SERVICE_OD/",
                 "type": "OData",
                 "settings": { "odataVersion": "4.0" }
-            }
-            <% } %>
-        }
+            }<% } %>
+        }<% } %>
     },
     "sap.ui": {
         "technology": "UI5",
@@ -72,7 +75,8 @@
 				"sap.collaboration": {},
 				"sap.ui.comp": {},
 				"sap.uxap": {},
-				"sap.ui.table": {}
+				"sap.ui.table": {},
+				"sap.ushell": {}
             }
         },
         "contentDensities": {
@@ -88,9 +92,7 @@
 					"fallbackLocale": "en",
 					"async": true
 				}
-			}
-            <% if (serviceType === 'ODataV2') { %>
-            ,
+			}<% if (serviceType === 'ODataV2') { %>,
             "oDataV2Model": {
                 "dataSource": "v2Service",
                 "preload": true,
@@ -99,8 +101,7 @@
                     "useBatch": true,
                     "json": true
                 }
-            }
-            <% } else if (serviceType === 'ODataV4') { %>
+            }<% } else if (serviceType === 'ODataV4') { %>
             "oDataV4Model": {
                 "dataSource": "v4Service",
                 "preload": true,
@@ -109,14 +110,11 @@
                     "groupId": "$auto",
                     "synchronizationMode": "None"
                 }
-            }
-            <% } %>
+            }<% } %>
         },
         "resources": {
-            "css": [
-                <% if (serviceType === 'Rest') { %>
-                { "uri": "css/style.css" },
-                <% } %>
+            "css": [<% if (includeLogin) { %>
+                { "uri": "css/style.css" },<% } %>
                 { "uri": "css/boostrap.css" }
             ]
         },
@@ -133,8 +131,7 @@
 				  "target": "notFound"
 				}
 			},
-            "routes": [
-                <% if (serviceType === 'Rest') { %>
+            "routes": [<% if (serviceType === 'Rest') { %><% if (includeLogin) { %>
                 {
 					"name": "Login",
 					"pattern": "",
@@ -145,56 +142,30 @@
 					"pattern": "Home",
 					"target": ["Home"],
 					"requiresAuth": true
-				},
-				{
-					"name": "Settings",
-					"pattern": "Settings",
-					"target": ["Settings"],
-					"requiresAuth": true
-				}
-                <% } else { %>
+				}<% } else { %>
+                {
+					"name": "Home",
+					"pattern": "",
+					"target": ["Home"]
+				}<% } %><% } else { %>
 				{
 					"name": "Home",
 					"pattern": "",
 					"target": ["Home"]
-				},
-				{
-					"name": "Settings",
-					"pattern": "Settings",
-					"target": ["Settings"]
-				}
-                <% } %>
+				}<% } %>
             ],
-            "targets": {
-                <% if (serviceType === 'Rest') { %>
+            "targets": {<% if (serviceType === 'Rest') { %><% if (includeLogin) { %>
                 "Login": {
 					"viewName": "Login",
 					"viewId": "Login",
+					"viewPath": "<%= namespace %>.view",
 					"viewLevel": 1
-				},
-                <% } %>
-                "Main": {
-                    "viewId": "Main",
-                    "viewName": "Main"
+				},<% } %><% } %>
+                "Home": {
+                    "viewName": "Home",
+                    "viewId": "Home",
+                    "title": "{i18n>title}"
                 },
-				"Home": {
-                    "parent": "Main",
-					"viewName": "Home",
-					"viewId": "Home",
-                    "viewPath": "<%= namespace %>.view",
-                    "controlId": "pageContainer",
-                    "controlAggregation": "pages",
-                    "title": "{i18n>homeTitle}"
-				},
-				"Settings": {
-                    "parent": "Main",
-					"viewName": "Settings",
-					"viewId": "Settings",
-                    "viewPath": "<%= namespace %>.view",
-                    "controlId": "pageContainer",
-                    "controlAggregation": "pages",
-                    "title": "{i18n>settingsTitle}"
-				},
 				"notFound": { 
                     "viewName": "NotFound" 
                 }

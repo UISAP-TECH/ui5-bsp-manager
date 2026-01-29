@@ -30,11 +30,10 @@ sap.ui.define(
       },
 
       /**
-       * @brief i18n metinlerini almak için merkezi ve güvenli bir yardımcı fonksiyon.
-       * Component'te saklanan oResourceBundle'a erişir.
-       * @param {string} sKey i18n dosyasındaki metnin anahtarı.
-       * @param {Array} [aParams] Metnin içine yerleştirilecek dinamik parametreler (opsiyonel).
-       * @returns {string} İstenen çeviri metni.
+       * @brief A central and secure helper function for retrieving i18n texts.
+       * @param {string} sKey The key of the text in the i18n file.
+       * @param {Array} [aParams] The parameters to be inserted into the text (optional).
+       * @returns {string} The requested translated text.
        */
       getText: function (sKey, aParams) {
         const oResourceBundle = this.getOwnerComponent().oResourceBundle;
@@ -42,7 +41,7 @@ sap.ui.define(
           return oResourceBundle.getText(sKey, aParams);
         }
         console.warn(
-          "ResourceBundle henüz hazır değil, anahtar döndürülüyor: " + sKey
+          "ResourceBundle has not been initialized yet, key returned: " + sKey
         );
         return sKey;
       },
@@ -85,10 +84,10 @@ sap.ui.define(
         return this.getOwnerComponent().getEventBus();
       },
       /**
-       * Bir modeldeki busy özelliğini set etmek için merkezi fonksiyon.
-       * @param {boolean} bBusy true veya false
-       * @param {string} [sModelName="settings"] Modelin adı. Varsayılan 'settings'.
-       * @param {string} [sProperty="/busy"] Model içindeki özelliğin yolu. Varsayılan '/busy'.
+       * A central function for setting the busy property of a model.
+       * @param {boolean} bBusy true or false
+       * @param {string} [sModelName="settings"] The name of the model. Default is 'settings'.
+       * @param {string} [sProperty="/busy"] The path of the property within the model. Default is '/busy'.
        * @public
        */
       setBusy: function (bBusy, sModelName = "settings", sProperty = "/busy") {
@@ -102,31 +101,26 @@ sap.ui.define(
         }
       },
       /**
-       * Servislerden dönen hataları merkezi olarak işleyen fonksiyon.
-       * Gelen hata nesnesini analiz eder ve kullanıcıya anlaşılır bir MessageBox gösterir.
-       * @param {object} oError Servisten dönen hata nesnesi.
-       * @param {string} [sCustomMessage] Hata mesajını ezmek için özel bir metin.
+       * A central function for handling errors returned from services.
+       * Analyzes the error object and displays a user-friendly MessageBox.
+       * @param {object} oError The error object returned from the service.
+       * @param {string} [sCustomMessage] A custom message to override the error message.
        * @public
        */
       handleServiceError: function (oError, sCustomMessage) {
-        // Geliştirici için tam hata detayını konsola yazdır.
-        console.error("Servis Hatası Detayı:", oError);
+        console.error("Service Error Details:", oError);
 
         let sDisplayMessage;
 
-        // Eğer özel bir mesaj belirtilmişse, onu kullan.
         if (sCustomMessage) {
           sDisplayMessage = sCustomMessage;
         }
-        // RestService'de oluşturduğumuz standart hata yapısını kontrol et.
         else if (oError?.messages?.[0]?.description) {
           sDisplayMessage = oError.messages[0].description;
         }
-        // Genel JavaScript hata nesnesini kontrol et.
         else if (oError?.message) {
           sDisplayMessage = oError.message;
         }
-        // Hiçbiri yoksa, genel bir hata mesajı göster.
         else {
           sDisplayMessage = this.getText("unexpectedError");
         }

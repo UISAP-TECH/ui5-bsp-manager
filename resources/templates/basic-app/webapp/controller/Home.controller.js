@@ -8,8 +8,8 @@ sap.ui.define(["./BaseController", "../util/Formatter"], function (BaseControlle
   return BaseController.extend("<%= namespace %>.controller.Home", {
     formatter: Formatter,
     /**
-     * @brief Controller ilk yüklendiğinde bir kez çalışır.
-     * Olay dinleyicilerini ve sabit referansları tanımlamak için kullanılır.
+     * @brief A function that runs once when the controller is loaded.
+     * Used to define event listeners and constant references.
      */
     onInit: function () {},
   });
