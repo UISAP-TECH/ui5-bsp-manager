@@ -1,7 +1,7 @@
 {
   "name": "<%= projectName %>",
   "version": "0.0.1",
-  "description": "<%= appDescription %>",
+  "description": "<%= description %>",
   "scripts": {
     "dev": "ui5 serve --config=ui5.yaml --open \"index.html?sap-language=tr\"",
     "build": "ui5 build --all --clean-dest",

@@ -172,6 +172,21 @@ export class TemplateService {
 
         progress.report({ message: 'Processing template files...', increment: 10 });
 
+        let backendUrl = 'https://your-sap-server.com';
+        let servicePath = '/sap/opu/odata/sap/YOUR_SERVICE_SRV/';
+
+        if (config.serviceUrl) {
+            try {
+                const urlObj = new URL(config.serviceUrl);
+                backendUrl = urlObj.origin;
+                servicePath = urlObj.pathname;
+                // Ensure service path ends with / for OData if mostly expected, but maybe not for Rest.
+                // For now, raw pathname is safer, user should provide full path.
+            } catch (e) {
+                console.warn('Invalid serviceUrl provided, using defaults', e);
+            }
+        }
+
         const templateData = {
             projectName: config.projectName,
             namespace: config.namespace,
@@ -179,8 +194,9 @@ export class TemplateService {
             serviceType: config.serviceType,
             ui5Version: config.ui5Version,
             theme: config.theme || 'sap_horizon',
-            backendUrl: 'https://your-sap-server.com',
-            includeLogin: config.serviceType === 'Rest' ? false : true // Temporarily disable login for Rest
+            backendUrl: backendUrl,
+            servicePath: servicePath,
+            includeLogin: false // Temporarily disable login for ALL service types based on user request
         };
 
         await this.processDirectory(templatePath, projectPath, templateData, progress);
@@ -214,15 +230,16 @@ export class TemplateService {
             const parentDir = path.basename(sourcePath);
 
             // 1. Conditional Filtering
-            if (data.serviceType === 'Rest') {
-                if (!data.includeLogin) {
-                    const isLoginView = entryName === 'Login.view.xml';
-                    const isLoginController = entryName === 'Login.controller.js';
-                    if (isLoginView || isLoginController) {
-                        continue;
-                    }
+            // Force disable Login files for ALL service types based on user request
+            if (!data.includeLogin) {
+                const isLoginView = entryName === 'Login.view.xml';
+                const isLoginController = entryName === 'Login.controller.js';
+                if (isLoginView || isLoginController) {
+                    continue;
                 }
-            } else {
+            }
+
+            if (data.serviceType !== 'Rest') {
                  // Not Rest - filter Rest specific files
                  const isRestCss = parentDir === 'css' && entryName === 'style.css';
                  const isRestBg = parentDir === 'backgrounds' && entryName === 'bg.png';
@@ -251,8 +268,14 @@ export class TemplateService {
                         }
                     } else if (data.serviceType === 'OData' || data.serviceType === 'ODataV2') {
                         serviceFilesToCopy.push('ODataV2Service.js');
+                        if (data.includeLogin) {
+                             serviceFilesToCopy.push('UserService.js', 'SessionManager.js');
+                        }
                     } else if (data.serviceType === 'ODataV4') {
                         serviceFilesToCopy.push('ODataV4Service.js');
+                        if (data.includeLogin) {
+                             serviceFilesToCopy.push('UserService.js', 'SessionManager.js');
+                        }
                     }
 
                     // Copy selected files manually

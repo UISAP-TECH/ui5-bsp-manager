@@ -15,7 +15,7 @@
 		},<% if (serviceType === 'Rest' || serviceType === 'ODataV2' || serviceType === 'ODataV4') { %>
         "dataSources": {<% if (serviceType === 'Rest') { %>
             "mainServiceAPI": {
-				"uri": "/sap/bc/your_rest_api/",
+				"uri": "<%= servicePath %>",
 				"type": "JSON",
 				"settings": {
 					"sapClient": "100"
@@ -30,12 +30,12 @@
 				"type": "JSON"
 			}<% } else if (serviceType === 'ODataV2') { %>
             "mainService": {
-                "uri": "/sap/opu/odata/sap/YOUR_V2_SERVICE_SRV/",
+                "uri": "<%= servicePath %>",
                 "type": "OData",
                 "settings": { "odataVersion": "2.0" }
             }<% } else if (serviceType === 'ODataV4') { %>
             "mainService": {
-                "uri": "/sap/opu/odata/sap/YOUR_V4_SERVICE_OD/",
+                "uri": "<%= servicePath %>",
                 "type": "OData",
                 "settings": { "odataVersion": "4.0" }
             }<% } %>
