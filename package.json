@@ -125,6 +125,12 @@
         "title": "Create SAPUI5 Project",
         "category": "BSP Manager",
         "icon": "$(file-add)"
+      },
+      {
+        "command": "bspManager.openI18nEditor",
+        "title": "Open Visual Editor",
+        "category": "BSP Manager",
+        "icon": "$(preview)"
       }
     ],
     "viewsContainers": {
@@ -149,7 +155,26 @@
         }
       ]
     },
+    "customEditors": [
+      {
+        "viewType": "bspManager.i18nEditor",
+        "displayName": "I18n Visual Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.properties"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "bspManager.openI18nEditor",
+          "when": "resourceExtname == .properties",
+          "group": "navigation"
+        }
+      ],
       "view/title": [
         {
           "command": "bspManager.refreshExplorer",

@@ -7,6 +7,7 @@ import { CreateProjectPanel } from './views/CreateProjectPanel';
 import { DeployService } from './services/DeployService';
 import { ConfigService } from './services/ConfigService';
 import { uploadBspCommand } from './commands/uploadBsp';
+import { I18nEditorProvider } from './editors/I18nEditorProvider';
 
 let statusBarItem: vscode.StatusBarItem;
 
@@ -26,6 +27,9 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Initialize Profile tree view provider
         const profileExplorerProvider = new ProfileExplorerProvider(context, configService);
+
+        // Register Custom I18n Editor Provider
+        context.subscriptions.push(I18nEditorProvider.register(context));
 
         // Update status bar based on CURRENTLY LOADED profile (not default)
         const updateStatusBar = () => {
@@ -406,6 +410,15 @@ export function activate(context: vscode.ExtensionContext) {
             // Create SAPUI5 Project
             vscode.commands.registerCommand('bspManager.createProject', () => {
                 CreateProjectPanel.createOrShow(context.extensionUri, configService);
+            }),
+
+            // Open I18n Visual Editor (from toolbar)
+            vscode.commands.registerCommand('bspManager.openI18nEditor', (uri: vscode.Uri) => {
+                if (uri) {
+                    vscode.commands.executeCommand('vscode.openWith', uri, 'bspManager.i18nEditor');
+                } else if (vscode.window.activeTextEditor) {
+                    vscode.commands.executeCommand('vscode.openWith', vscode.window.activeTextEditor.document.uri, 'bspManager.i18nEditor');
+                }
             })
         ];
 
