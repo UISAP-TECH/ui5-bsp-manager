@@ -49,12 +49,6 @@ export class TemplateService {
                 name: 'Basic Application',
                 description: 'Simple SAPUI5 application with routing, i18n, and service layer',
                 icon: '$(file-code)'
-            },
-            {
-                id: 'sidebar-shellbar-app',
-                name: 'Sidebar Shellbar Application',
-                description: 'Full-featured Fiori application with sidebar navigation and shellbar',
-                icon: '$(layout-sidebar-left)'
             }
         ];
     }

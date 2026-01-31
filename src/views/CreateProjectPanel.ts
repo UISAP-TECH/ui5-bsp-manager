@@ -515,13 +515,6 @@ export class CreateProjectPanel {
                         <p>Simple SAPUI5 app with routing & i18n</p>
                     </div>
                 </div>
-                <div class="template-card" data-template="sidebar-shellbar-app">
-                    <div class="template-icon">${iconBox}</div>
-                    <div class="template-info">
-                        <h3>Sidebar Shellbar App</h3>
-                        <p>Full-featured Fiori app with navigation</p>
-                    </div>
-                </div>
             </div>
         </div>
 
