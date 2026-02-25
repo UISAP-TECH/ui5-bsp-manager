@@ -594,54 +594,22 @@ export class DeployService {
         const path = require('path');
         const cp = require('child_process');
 
-        // Check for package.json to trigger build
+        // Direct deployment from webapp folder (no build) as requested
         let projectRoot = params.sourceDir;
         if (!fs.existsSync(path.join(projectRoot, 'package.json'))) {
-             // Try parent folder if sourceDir is already 'dist' or similar
              const parent = path.dirname(projectRoot);
              if (fs.existsSync(path.join(parent, 'package.json'))) {
                  projectRoot = parent;
              }
         }
 
-        if (fs.existsSync(path.join(projectRoot, 'package.json'))) {
-             progress.report({ message: 'Building project (npm run build)...' });
-             
-             await new Promise<void>((resolve, reject) => {
-                 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                 // Run install first to ensure deps
-                 // Note: Skipping install to save time if node_modules exists? 
-                 // Let's assume deps are there or run install if missing? 
-                 // Better to just run build. If it fails, user should fix deps.
-                 
-                 const buildProcess = cp.spawn(npmCommand, ['run', 'build'], {
-                     cwd: projectRoot,
-                     shell: true
-                 });
-
-                 buildProcess.stdout.on('data', (d: any) => console.log(d.toString()));
-                 buildProcess.stderr.on('data', (d: any) => console.error(d.toString()));
-
-                 buildProcess.on('close', (code: number) => {
-                     if (code === 0) resolve();
-                     else reject(new Error('Build failed'));
-                 });
-             });
-        }
-
-        // After build (or if skipped), determine the correct source directory to upload from.
-        // Priority:
-        // 1. 'dist' folder (if built successfully)
-        // 2. 'webapp' folder (standard UI5 source)
-        // 3. Project root (fallback, but risky as it uploads everything)
-        
         let cwd = params.sourceDir;
-        
-        if (fs.existsSync(path.join(projectRoot, 'dist'))) {
-            cwd = path.join(projectRoot, 'dist');
-        } else if (fs.existsSync(path.join(projectRoot, 'webapp'))) {
-             // Fallback: if no dist, use webapp folder to ensure we upload contents, not the folder itself
+        if (fs.existsSync(path.join(projectRoot, 'webapp'))) {
+             // Use webapp folder directly to ensure we upload contents, not the folder itself
              cwd = path.join(projectRoot, 'webapp');
+        } else if (fs.existsSync(path.join(projectRoot, 'dist'))) {
+             // Fallback to dist if webapp is not found (though user prefers webapp)
+             cwd = path.join(projectRoot, 'dist');
         }
 
         // Create a temporary .nwabaprc configuration
